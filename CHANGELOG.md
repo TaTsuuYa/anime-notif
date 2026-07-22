@@ -32,3 +32,12 @@ follows [Keep a Changelog](https://keepachangelog.com/).
 - Real, working example source plugin `sources/subsplease.toml`, tested
   against both a captured fixture and the live SubsPlease API.
 - `docs/sources.md`: the source-plugin format reference.
+- `anime-notif-cli` and the `anime-notif` binary: `list`, `<selector> set
+  category|alias <value>`, `<selector> show`, `<selector> rm` (selector =
+  numeric id, alias, or title; ambiguous titles change nothing and report
+  how many shows matched), `categories list/add/rm`, `source
+  list/add/test`. Category values match by full name or shortest
+  unambiguous prefix. `categories add/rm` and `source add` rewrite
+  `config.toml` (comments/formatting not preserved — documented). `serve`
+  is recognized but not wired up yet.
+- `docs/cli.md`: the CLI command reference.

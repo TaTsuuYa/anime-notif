@@ -50,6 +50,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "anime-notif"
+version = "0.1.0"
+dependencies = [
+ "anime-notif-cli",
+ "anime-notif-core",
+ "anime-notif-store",
+ "tokio",
+]
+
+[[package]]
+name = "anime-notif-cli"
+version = "0.1.0"
+dependencies = [
+ "anime-notif-core",
+ "anime-notif-fetch",
+ "anime-notif-store",
+ "tempfile",
+ "thiserror 2.0.19",
+ "tokio",
+ "toml",
+]
+
+[[package]]
 name = "anime-notif-core"
 version = "0.1.0"
 dependencies = [

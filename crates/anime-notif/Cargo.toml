@@ -1,0 +1,17 @@
+[package]
+name = "anime-notif"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Cross-platform anime release watcher, notifier, and auto-downloader"
+
+[[bin]]
+name = "anime-notif"
+path = "src/main.rs"
+
+[dependencies]
+anime-notif-core.workspace = true
+anime-notif-store.workspace = true
+anime-notif-cli.workspace = true
+tokio.workspace = true

@@ -1,0 +1,17 @@
+[package]
+name = "anime-notif-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anime-notif-core.workspace = true
+anime-notif-store.workspace = true
+anime-notif-fetch.workspace = true
+toml.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+tempfile = "3"

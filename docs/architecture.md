@@ -16,8 +16,8 @@ crates/
   notify/  anime-notif-notify — native notifications + loopback action fallback           (not yet built)
   download/anime-notif-download — direct/torrent/magnet handoff, path resolution          (not yet built)
   daemon/  anime-notif-daemon — scheduler, resolution-wait/fallback, control server        (not yet built)
-  cli/     anime-notif-cli    — clap subcommands, selector/prefix matching                 (not yet built)
-  anime-notif/                — thin binary entry point dispatching to cli/daemon          (not yet built)
+  cli/     anime-notif-cli    — command parsing/dispatch, selector + category prefix matching
+  anime-notif/                — binary entry point: loads config, opens the store, dispatches
 ```
 
 ### `core`
@@ -65,6 +65,25 @@ response.
 `sources/subsplease.toml` is the real, working example this project
 develops and tests against; `crates/fetch/tests/subsplease.rs` validates it
 both against a captured fixture and (opt-in, `--ignored`) the live API.
+
+### `cli` and the `anime-notif` binary
+
+`cli`'s grammar puts the selector first (`<id|alias|name> set category
+liked`), which doesn't map onto `clap`'s subcommand model — so argument
+parsing ([`parse`](../crates/cli/src/lib.rs)) is a small hand-rolled parser
+rather than derived. [`dispatch`](../crates/cli/src/lib.rs) executes a
+parsed `Command` against a `Config` + `Store`, returning the text to print
+(kept separate from I/O so it's directly testable). Selector and category
+prefix resolution live in [`selector.rs`](../crates/cli/src/selector.rs);
+table rendering in [`table.rs`](../crates/cli/src/table.rs); the
+config-file-rewriting commands (`categories add/rm`, `source add`) in
+[`config_write.rs`](../crates/cli/src/config_write.rs). See `docs/cli.md`
+for the full command reference.
+
+The `anime-notif` binary (`crates/anime-notif`) is a thin entry point:
+resolve the config path → load it (defaults if it doesn't exist yet) →
+open the store → parse argv → dispatch → print. `serve` is recognized but
+not wired to anything yet — that lands with `anime-notif-daemon`.
 
 ### `store`
 
