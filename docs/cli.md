@@ -102,5 +102,18 @@ a clear I/O error; edit your Nix configuration instead.
 
 ## `serve`
 
-Not implemented yet — prints a message and exits. Lands with the daemon in
-a later milestone.
+Runs the background daemon in the foreground (service managers wrap it —
+see `docs/nix.md` once the NixOS/home-manager modules land). Polls every
+configured source on its own schedule, runs the resolution-wait workflow
+(`docs/downloads.md`), and serves the loopback control server that handles
+notification actions (`docs/notifications.md`).
+
+Logs via `tracing`; control the verbosity with `RUST_LOG` (e.g.
+`RUST_LOG=info anime-notif serve`, `RUST_LOG=debug` for more detail).
+
+```
+$ RUST_LOG=info anime-notif serve
+INFO anime_notif_store::migrations: applied migration version=1
+INFO anime_notif_daemon: control server listening control_addr=127.0.0.1:41131
+INFO anime_notif_daemon: starting poller source=subsplease
+```

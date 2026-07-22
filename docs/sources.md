@@ -46,6 +46,7 @@ way to iterate on a plugin.
 | `endpoint` | yes | The API URL to poll. |
 | `method` | no (`GET`) | `GET` or `POST`. |
 | `interval` | no | Poll interval override (e.g. `"10m"`), falling back to `general.default_interval`. |
+| `resolution_wait` | no | Resolution-wait override (e.g. `"45m"`), falling back to `downloads.resolution_wait`. See `docs/downloads.md`. |
 | `headers` | no | Extra HTTP headers. Values may reference `${VAR}` (expanded from the environment when the file loads). |
 | `query` | no | Query string parameters. |
 | `body` | no | Request body, for `POST`. |

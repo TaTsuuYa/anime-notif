@@ -1,0 +1,28 @@
+[package]
+name = "anime-notif-daemon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anime-notif-core.workspace = true
+anime-notif-store.workspace = true
+anime-notif-fetch.workspace = true
+anime-notif-notify.workspace = true
+anime-notif-download.workspace = true
+reqwest.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+chrono.workspace = true
+regex.workspace = true
+url = "2"
+axum = "0.8"
+rand = "0.8"
+
+[dev-dependencies]
+tempfile = "3"
+async-trait = "0.1"

@@ -136,6 +136,10 @@ pub struct SourcePlugin {
     /// when unset.
     #[serde(default, with = "humantime_serde::option")]
     pub interval: Option<Duration>,
+    /// Resolution-wait override; falls back to `downloads.resolution_wait`
+    /// when unset.
+    #[serde(default, with = "humantime_serde::option")]
+    pub resolution_wait: Option<Duration>,
     /// Extra HTTP headers (values may reference `${VAR}`).
     #[serde(default)]
     pub headers: HashMap<String, String>,
@@ -209,6 +213,7 @@ impl SourcePlugin {
             endpoint: self.endpoint.clone(),
             method: self.method.clone(),
             interval: self.interval,
+            resolution_wait: self.resolution_wait,
             headers: self.headers.clone(),
             query: self.query.clone(),
             body: self.body.clone(),
@@ -330,6 +335,8 @@ pub struct CompiledSource {
     pub method: String,
     /// Poll interval override.
     pub interval: Option<Duration>,
+    /// Resolution-wait override.
+    pub resolution_wait: Option<Duration>,
     /// Extra HTTP headers.
     pub headers: HashMap<String, String>,
     /// Query string parameters.

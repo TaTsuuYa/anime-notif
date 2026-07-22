@@ -19,7 +19,7 @@ mod series;
 mod types;
 
 pub use error::StoreError;
-pub use types::{InteractionKind, InteractionRow, PendingRow, SeriesRow};
+pub use types::{InteractionKind, InteractionRow, PendingRow, SeenRow, SeriesRow};
 
 use anime_notif_core::config::DbConfig;
 
@@ -174,6 +174,39 @@ mod tests {
             .mark_seen("key1", series.id, "1", "1080p", "magnet", "magnet:?xt=1")
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn list_seen_for_episode_returns_all_variants() {
+        let store = Store::open_in_memory().await.unwrap();
+        let series = store
+            .upsert_series("subsplease", "One Piece", "liked", None)
+            .await
+            .unwrap();
+        store
+            .mark_seen("k1080", series.id, "5", "1080", "magnet", "magnet:?xt=1080")
+            .await
+            .unwrap();
+        store
+            .mark_seen("k720", series.id, "5", "720", "magnet", "magnet:?xt=720")
+            .await
+            .unwrap();
+        store
+            .mark_seen(
+                "kother",
+                series.id,
+                "6",
+                "1080",
+                "magnet",
+                "magnet:?xt=other-ep",
+            )
+            .await
+            .unwrap();
+
+        let variants = store.list_seen_for_episode(series.id, "5").await.unwrap();
+        assert_eq!(variants.len(), 2);
+        assert!(variants.iter().any(|v| v.resolution == "1080"));
+        assert!(variants.iter().any(|v| v.resolution == "720"));
     }
 
     #[tokio::test]

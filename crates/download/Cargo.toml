@@ -1,0 +1,19 @@
+[package]
+name = "anime-notif-download"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anime-notif-core.workspace = true
+reqwest.workspace = true
+tokio.workspace = true
+thiserror.workspace = true
+async-trait = "0.1"
+shell-words = "1"
+url = "2"
+
+[dev-dependencies]
+wiremock = "0.6"
+tempfile = "3"

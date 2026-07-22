@@ -13,9 +13,9 @@ crates/
                                  schema + jq/regex/default/prefix extraction engine, XDG paths
   store/   anime-notif-store  — libSQL-backed persistence (series, seen, pending, interactions)
   fetch/   anime-notif-fetch  — HTTP client: resolves source plugins (local/remote), polls endpoints
-  notify/  anime-notif-notify — native notifications + loopback action fallback           (not yet built)
-  download/anime-notif-download — direct/torrent/magnet handoff, path resolution          (not yet built)
-  daemon/  anime-notif-daemon — scheduler, resolution-wait/fallback, control server        (not yet built)
+  notify/  anime-notif-notify — Notifier trait + Linux (D-Bus) backend; Windows/macOS pending
+  download/anime-notif-download — direct/torrent/magnet handoff, never through a shell
+  daemon/  anime-notif-daemon — scheduler, resolution-wait engine, loopback control server
   cli/     anime-notif-cli    — command parsing/dispatch, selector + category prefix matching
   anime-notif/                — binary entry point: loads config, opens the store, dispatches
 ```
@@ -82,8 +82,56 @@ for the full command reference.
 
 The `anime-notif` binary (`crates/anime-notif`) is a thin entry point:
 resolve the config path → load it (defaults if it doesn't exist yet) →
-open the store → parse argv → dispatch → print. `serve` is recognized but
-not wired to anything yet — that lands with `anime-notif-daemon`.
+open the store → parse argv → dispatch. For every command except `serve`,
+`dispatch` goes to `cli`; for `serve`, it initializes tracing and calls
+`anime_notif_daemon::run(config)` directly instead.
+
+### `notify` and `download`
+
+`notify` defines the `Notifier` trait — `notify(&Notification)`, fire-and-
+forget — and a Linux backend (`LinuxNotifier`, via `notify-rust`/D-Bus)
+with real action buttons. Every `NotificationAction` carries a full URL
+(the daemon's control server) rather than an opaque id, so both a native
+button click and the (not-yet-built) plain-link fallback converge on the
+same action-handling code path. `NullNotifier` records notifications
+instead of showing them, used in tests and as the fallback on platforms
+without a native backend yet (`docs/notifications.md`).
+
+`download` defines the `Downloader` trait and `StdDownloader`: async HTTP
+for `direct`/torrent-file fetches, and direct process spawning (never a
+shell — command templates are tokenized, then only whole-token
+`{magnet}`/`{link}` placeholders are substituted, then executed via
+`Command::new(program).args(args)`) for command hand-off. See
+`docs/downloads.md`.
+
+### `daemon`
+
+Ties everything together:
+
+- [`resolution`](../crates/daemon/src/resolution.rs) — pure decision logic
+  (no I/O): ranking resolutions against the fallback preference list,
+  picking the best available variant (preferring the favourite method),
+  and matching a title against `[[rules]]` to seed a category. Exhaustively
+  unit-tested.
+- [`engine::Engine`](../crates/daemon/src/engine.rs) — the I/O
+  orchestration: `process_poll` (dedup → group by episode → resolve each
+  group now or record as pending), `sweep_pending` (resolution-wait
+  timeout fallback), and `handle_action` (download/whitelist/blacklist,
+  shared by the control server and native action callbacks). Owns its
+  dependencies via `Arc` (store/config/notifier/downloader) so an
+  `Arc<Engine>` can be shared, `'static`, across scheduler tasks and the
+  control server. Integration-tested against an in-memory store with fake
+  notifier/downloader, covering the full resolution-wait state machine.
+- [`scheduler`](../crates/daemon/src/scheduler.rs) — spawns one polling
+  task per source on its own interval.
+- [`control`](../crates/daemon/src/control.rs) — the loopback HTTP control
+  server (axum, `127.0.0.1` only, random per-run token): binding is split
+  from serving (`bind_listener` then `serve`) because the bound port is
+  needed to build `Engine.control_base_url`, but serving needs the
+  already-built `Engine` as request state.
+
+See `docs/downloads.md` and `docs/notifications.md` for the user-facing
+behavior this implements.
 
 ### `store`
 

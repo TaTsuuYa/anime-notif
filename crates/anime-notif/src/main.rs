@@ -63,6 +63,17 @@ async fn main() {
     let path = config_path();
     let config = load_config(&path);
 
+    if matches!(command, anime_notif_cli::Command::Serve) {
+        tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .init();
+        if let Err(err) = anime_notif_daemon::run(config).await {
+            eprintln!("error: failed to start daemon: {err}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     let store = match Store::open(&config.general.db).await {
         Ok(store) => store,
         Err(err) => {

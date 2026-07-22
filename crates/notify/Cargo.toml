@@ -1,0 +1,13 @@
+[package]
+name = "anime-notif-notify"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+notify-rust = "4"
+ureq = "2"

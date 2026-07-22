@@ -14,4 +14,7 @@ path = "src/main.rs"
 anime-notif-core.workspace = true
 anime-notif-store.workspace = true
 anime-notif-cli.workspace = true
+anime-notif-daemon.workspace = true
 tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

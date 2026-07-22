@@ -41,3 +41,24 @@ follows [Keep a Changelog](https://keepachangelog.com/).
   `config.toml` (comments/formatting not preserved — documented). `serve`
   is recognized but not wired up yet.
 - `docs/cli.md`: the CLI command reference.
+- `anime-notif-notify`: `Notifier` trait, Linux D-Bus backend
+  (`notify-rust`) with real action buttons, `NullNotifier` fallback.
+  Actions carry full control-server URLs so native and (future) link-
+  fallback clicks converge on one code path.
+- `anime-notif-download`: `Downloader` trait and `StdDownloader` — async
+  HTTP for direct/torrent-file fetches, direct process spawning (never a
+  shell) for magnet/command hand-off.
+- `anime-notif-daemon`: the resolution-wait engine (`resolution` for pure
+  ranking/matching logic, `engine::Engine` for the I/O orchestration:
+  dedup, grouping by episode, notify/download-now vs. pending, timeout
+  fallback, and the download/whitelist/blacklist action handler shared by
+  native callbacks and the control server), a per-source polling
+  scheduler, and a loopback control server (axum, `127.0.0.1`-only,
+  per-run token). `serve` is now wired up in the `anime-notif` binary and
+  verified end-to-end against the live SubsPlease API (poll → extract →
+  dedup → resolve → notify, with the control server's `/health` and token
+  enforcement confirmed).
+- Added `resolution_wait` as a per-source override in the source-plugin
+  schema, and `Store::list_seen_for_episode` for the manual "Download"
+  action to re-derive the favourite available variant.
+- `docs/downloads.md`, `docs/notifications.md`.

@@ -3,6 +3,20 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+/// A row from the `seen` table: one previously-recorded episode variant.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SeenRow {
+    /// Episode identifier.
+    pub episode: String,
+    /// Resolution label.
+    pub resolution: String,
+    /// Download method, as its lowercase string
+    /// ([`anime_notif_core::DownloadMethod::as_str`]).
+    pub method: String,
+    /// The URL or magnet URI.
+    pub link: String,
+}
+
 /// A row from the `series` table: a show tracked from a given source, with
 /// its mutable, CLI-owned state (category, alias, last episode/interaction).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
