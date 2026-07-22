@@ -1,0 +1,36 @@
+# Rust
+/target/
+**/target/
+Cargo.lock.bak
+
+# Nix
+result
+result-*
+.direnv/
+.pre-commit-config.yaml.bak
+
+# Runtime / local state (should never be committed)
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+/data/
+/cache/
+
+# Secrets / env
+.env
+.env.*
+*.pem
+*.key
+
+# Editor / OS cruft
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings (project-specific, not shared)
+.claude/settings.local.json
