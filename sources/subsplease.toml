@@ -1,0 +1,32 @@
+# SubsPlease's "latest releases" API. Validated against a live response from
+# https://subsplease.org/api/?f=latest&tz=Africa/Casablanca — see
+# crates/fetch/tests/fixtures/subsplease_latest.json for a captured sample
+# and docs/sources.md for the plugin file format itself.
+#
+# The response is a JSON *object* keyed by "<show> - <episode>" strings, so
+# `items = ".[]"` iterates its values. Downloads are magnet-only, so
+# `fields.variant.method` is a constant. `image_url`/`page` are relative and
+# absent on some entries, so `cover`/`id` use `prefix` and no `default`
+# (left unset when missing, which is fine — both are optional fields).
+
+id = "subsplease"
+endpoint = "https://subsplease.org/api/"
+method = "GET"
+interval = "10m"
+query = { f = "latest", tz = "Africa/Casablanca" }
+
+items = ".[]"
+variants = ".downloads[]"
+
+[fields]
+series  = { path = ".show" }
+episode = { path = ".episode", default = "?" }
+cover   = { path = ".image_url", prefix = "https://subsplease.org" }
+id      = { path = ".page" }
+
+[fields.variant]
+# Raw values are bare digits ("480"/"720"/"1080") already, but the regex
+# normalizes any source that includes a "p" suffix to the same convention.
+resolution = { path = ".res", regex = "(\\d+)", default = "480" }
+method     = { default = "magnet" }
+link       = { path = ".magnet" }

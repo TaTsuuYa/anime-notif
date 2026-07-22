@@ -44,8 +44,10 @@ auth_token = "${TURSO_TOKEN}"
 |---|---|---|---|
 | `base_dir` | path | `~/Downloads/anime-notif` | Base directory when no override applies: `<base_dir>/<source>/<method>`. |
 | `default_method` | `direct`\|`torrent`\|`magnet` | `direct` | Favourite method for liked/auto-downloaded shows. |
-| `default_resolution` | string | `1080p` | Desired resolution. Releases below it trigger the resolution-wait workflow (see [downloads.md](downloads.md) once written). |
-| `resolution_fallback` | list of strings | `["1080p","720p","480p"]` | Preference order used once `resolution_wait` elapses without the desired resolution appearing. |
+| `default_resolution` | string | `1080` | Desired resolution. Releases below it trigger the resolution-wait workflow (see [downloads.md](downloads.md) once written). By convention resolution labels are bare digit strings — see below. |
+| `resolution_fallback` | list of strings | `["1080","720","480"]` | Preference order used once `resolution_wait` elapses without the desired resolution appearing. |
+
+**Resolution label convention:** sources vary in whether they report `"1080p"` or `"1080"` (subsplease's API, for example, uses bare digits). Plugins normalize this with a `(\d+)` regex on the raw value (see `docs/sources.md`), so `default_resolution`/`resolution_fallback` here should be specified as bare digits too.
 | `resolution_wait` | duration string | `30m` | How long to wait for the desired resolution before falling back. |
 
 ### Path overrides

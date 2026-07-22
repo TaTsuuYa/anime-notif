@@ -4,6 +4,7 @@ resolver = "2"
 members = [
   "crates/core",
   "crates/store",
+  "crates/fetch",
 ]
 
 [workspace.package]
@@ -18,6 +19,7 @@ rust-version = "1.85"
 # creates them (see `members` above).
 anime-notif-core = { path = "crates/core" }
 anime-notif-store = { path = "crates/store" }
+anime-notif-fetch = { path = "crates/fetch" }
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "fs", "process", "signal"] }
 serde = { version = "1", features = ["derive"] }

@@ -9,9 +9,10 @@ updated alongside them (see `.claude/skills/sync-docs/`).
 
 ```
 crates/
-  core/    anime-notif-core   — Release/DownloadMethod model, Config schema, XDG paths
+  core/    anime-notif-core   — Release/DownloadMethod model, Config schema, source-plugin
+                                 schema + jq/regex/default/prefix extraction engine, XDG paths
   store/   anime-notif-store  — libSQL-backed persistence (series, seen, pending, interactions)
-  fetch/   anime-notif-fetch  — HTTP client + jq/regex/default/prefix source extraction   (not yet built)
+  fetch/   anime-notif-fetch  — HTTP client: resolves source plugins (local/remote), polls endpoints
   notify/  anime-notif-notify — native notifications + loopback action fallback           (not yet built)
   download/anime-notif-download — direct/torrent/magnet handoff, path resolution          (not yet built)
   daemon/  anime-notif-daemon — scheduler, resolution-wait/fallback, control server        (not yet built)
@@ -36,6 +37,34 @@ Owns the types every other crate depends on so they're defined once:
 Config loading expands `${VAR}` environment references (unresolved ones are
 left as-is) before TOML parsing, then `~` in path fields, then validates
 category/rule/method-key consistency.
+
+- [`jqpath::JqPath`](../crates/core/src/jqpath.rs) — a small, dependency-free
+  evaluator for the jq path subset (`.a.b[].c[2]`) plugins use to point at
+  JSON fields; every path means the same thing under real `jq`.
+- [`source::SourcePlugin`](../crates/core/src/source.rs) — the source-plugin
+  TOML schema (see `docs/sources.md`) and its `compile()` step, which
+  pre-parses every jq path and regex into a [`source::CompiledSource`] so
+  polling doesn't re-parse on every call.
+- [`extract::extract`](../crates/core/src/extract.rs) — turns a source's raw
+  JSON response into `Vec<Release>` using a `CompiledSource`'s field rules.
+  Malformed items/variants are skipped and reported as warnings rather than
+  aborting the whole poll.
+
+### `fetch`
+
+Thin HTTP glue on top of `core`'s source engine:
+[`resolve_source`](../crates/fetch/src/loader.rs) turns a source location
+(local path or `http(s)://` URL) into a `CompiledSource` — remote plugins
+are fetched, cached under a cache directory keyed by a hash of the URL, and
+fall back to the cached copy on a transient fetch failure; an optional
+pinned SHA-256 checksum can be enforced on fresh fetches.
+[`poll`](../crates/fetch/src/poll.rs) then fetches a source's endpoint
+(method/headers/query/body from the plugin) and runs `core::extract` on the
+response.
+
+`sources/subsplease.toml` is the real, working example this project
+develops and tests against; `crates/fetch/tests/subsplease.rs` validates it
+both against a captured fixture and (opt-in, `--ignored`) the live API.
 
 ### `store`
 

@@ -7,9 +7,15 @@
 
 pub mod config;
 pub mod error;
+pub mod extract;
+pub mod jqpath;
 pub mod model;
 pub mod paths;
+pub mod source;
 
 pub use config::Config;
 pub use error::ConfigError;
+pub use extract::{extract, ExtractionResult};
+pub use jqpath::JqPath;
 pub use model::{DownloadMethod, Release};
+pub use source::{CompiledSource, SourceError, SourcePlugin};

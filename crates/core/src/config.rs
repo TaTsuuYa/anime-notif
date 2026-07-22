@@ -14,7 +14,7 @@ use crate::model::DownloadMethod;
 
 /// Top-level config, as loaded from `config.toml`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct Config {
     /// Global daemon settings.
     pub general: General,
@@ -47,7 +47,7 @@ impl Default for Config {
 
 /// Global daemon settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct General {
     /// How often to poll a source when it doesn't set its own `interval`.
     #[serde(with = "humantime_serde")]
@@ -67,7 +67,7 @@ impl Default for General {
 
 /// Where the sqlite-compatible database lives.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
+#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
 pub enum DbConfig {
     /// A local SQLite file on disk.
     Local {
@@ -93,7 +93,7 @@ impl Default for DbConfig {
 
 /// Download path resolution and favourite method/resolution settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct Downloads {
     /// Base directory releases are downloaded under, when no override
     /// applies: `<base_dir>/<source>/<method>`.
@@ -101,7 +101,10 @@ pub struct Downloads {
     /// Favourite download method for liked/auto-downloaded shows.
     pub default_method: DownloadMethod,
     /// Desired resolution; releases below this trigger the resolution-wait
-    /// workflow (see [`Downloads::resolution_wait`]).
+    /// workflow (see [`Downloads::resolution_wait`]). By convention,
+    /// resolution labels are bare digit strings (`"1080"`, not `"1080p"`) —
+    /// source plugins normalize to this with a `(\d+)` regex on the raw
+    /// value, since sources vary in whether they include the `p` suffix.
     pub default_resolution: String,
     /// Preference order used to pick a fallback resolution once
     /// `resolution_wait` elapses without the desired resolution appearing.
@@ -126,8 +129,8 @@ impl Default for Downloads {
         Self {
             base_dir: crate::paths::default_download_dir(),
             default_method: DownloadMethod::Direct,
-            default_resolution: "1080p".to_string(),
-            resolution_fallback: vec!["1080p".into(), "720p".into(), "480p".into()],
+            default_resolution: "1080".to_string(),
+            resolution_fallback: vec!["1080".into(), "720".into(), "480".into()],
             resolution_wait: Duration::from_secs(30 * 60),
             methods: HashMap::new(),
             sources: HashMap::new(),
@@ -138,6 +141,7 @@ impl Default for Downloads {
 /// A download-path/behavior override, applicable per-method and/or
 /// per-source.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MethodOverride {
     /// Directory to save direct downloads / `.torrent` files fetched for
     /// inspection into.
@@ -163,6 +167,7 @@ impl MethodOverride {
 /// Per-source download overrides: a directory for the whole source, and/or
 /// per-method overrides scoped to that source.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SourceDownloadOverride {
     /// Directory for all of this source's downloads, regardless of method.
     pub dir: Option<PathBuf>,
@@ -225,6 +230,7 @@ impl Downloads {
 
 /// A category definition: a name plus the behavior it implies.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CategoryDef {
     /// Category name, referenced by rules and by the CLI's `set category`.
     pub name: String,
@@ -264,6 +270,7 @@ impl CategoryDef {
 /// A declarative rule seeding/overriding a series' category by matching its
 /// title. Exactly one of `match_exact`/`match_regex` should be set.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Rule {
     /// Exact (case-sensitive) title match.
     #[serde(rename = "match", default)]
@@ -405,7 +412,7 @@ mod tests {
     fn parses_minimal_toml_with_defaults() {
         let cfg = Config::parse("", Path::new("test.toml")).unwrap();
         assert_eq!(cfg.categories.len(), 3);
-        assert_eq!(cfg.downloads.default_resolution, "1080p");
+        assert_eq!(cfg.downloads.default_resolution, "1080");
     }
 
     #[test]
