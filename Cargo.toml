@@ -1,0 +1,46 @@
+[workspace]
+resolver = "2"
+# Members are added incrementally as each build milestone lands them.
+members = [
+  "crates/core",
+  "crates/store",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/TaTsuuYa/anime-notif"
+rust-version = "1.85"
+
+[workspace.dependencies]
+# Path deps for not-yet-scaffolded crates are added here as each milestone
+# creates them (see `members` above).
+anime-notif-core = { path = "crates/core" }
+anime-notif-store = { path = "crates/store" }
+
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "fs", "process", "signal"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+regex = "1"
+directories = "5"
+shellexpand = "3"
+clap = { version = "4", features = ["derive"] }
+chrono = { version = "0.4", features = ["serde"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+sha2 = "0.10"
+jaq-core = "1"
+jaq-json = "1"
+jaq-std = "1"
+libsql = "0.9"
+uuid = { version = "1", features = ["v4"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
