@@ -95,3 +95,9 @@ follows [Keep a Changelog](https://keepachangelog.com/).
   default icon (`assets/icon.svg`, embedded via `include_bytes!` and
   written to the cache directory once at startup rather than resolved as
   an installed data file at runtime).
+
+### Release packaging
+- `.github/workflows/release.yml`: builds and publishes release binaries
+  (Linux/Windows/macOS x86_64, macOS aarch64) with SHA-256 checksums to a
+  GitHub release, triggered on `v*` tag pushes. Not yet exercised by an
+  actual tag push.

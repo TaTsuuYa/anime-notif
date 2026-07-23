@@ -1,0 +1,104 @@
+name: Release
+
+# Builds and publishes release binaries for Linux/Windows/macOS whenever a
+# `v*` tag is pushed (e.g. `v0.1.0`). Not exercised by the regular CI
+# workflow (ci.yml) — only triggers on tag push, so day-to-day commits are
+# unaffected.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset_name: anime-notif-linux-x86_64
+            binary_name: anime-notif
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset_name: anime-notif-windows-x86_64
+            binary_name: anime-notif.exe
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            asset_name: anime-notif-macos-x86_64
+            binary_name: anime-notif
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            asset_name: anime-notif-macos-aarch64
+            binary_name: anime-notif
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      # libsql-ffi builds SQLite via bindgen, which needs libclang; the
+      # D-Bus notification backend needs libdbus headers. Neither is
+      # preinstalled on the GitHub-hosted Linux runner's minimal image.
+      - name: Install Linux build dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev pkg-config libsqlite3-dev libclang-dev
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }} -p anime-notif
+
+      - name: Package (unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf "${{ github.workspace }}/${{ matrix.asset_name }}.tar.gz" ${{ matrix.binary_name }}
+          cd "${{ github.workspace }}"
+          sha256sum "${{ matrix.asset_name }}.tar.gz" > "${{ matrix.asset_name }}.tar.gz.sha256"
+
+      - name: Package (windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          7z a "${{ github.workspace }}/${{ matrix.asset_name }}.zip" ${{ matrix.binary_name }}
+          cd "${{ github.workspace }}"
+          sha256sum "${{ matrix.asset_name }}.zip" > "${{ matrix.asset_name }}.zip.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: |
+            ${{ matrix.asset_name }}.tar.gz
+            ${{ matrix.asset_name }}.tar.gz.sha256
+            ${{ matrix.asset_name }}.zip
+            ${{ matrix.asset_name }}.zip.sha256
+          if-no-files-found: ignore
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true

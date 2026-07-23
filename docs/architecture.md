@@ -196,3 +196,13 @@ the running service. Everything the CLI mutates — category assignment,
 aliases, interaction history, seen/pending state — lives in the database
 instead, so `anime-notif <show> set category liked` never needs to rewrite a
 file that might be a symlink into the Nix store.
+
+## CI and releases
+
+`.github/workflows/ci.yml` runs on every push/PR: `fmt`/`clippy`/`test` on
+Linux/Windows/macOS, plus `nix flake check` (Linux). `.github/workflows/release.yml`
+triggers only on a `v*` tag push and builds/packages a release binary for
+each OS (`x86_64` Linux/Windows/macOS, plus `aarch64` macOS), with a
+SHA-256 checksum alongside each archive, published as GitHub release
+assets. It hasn't been exercised by an actual tag push yet — reviewing the
+first real release's run is worth doing before trusting it blindly.
