@@ -11,6 +11,7 @@
 #![warn(missing_docs)]
 
 pub mod control;
+pub mod cover;
 pub mod engine;
 pub mod error;
 pub mod resolution;
@@ -59,6 +60,14 @@ pub async fn run(config: Config) -> Result<(), DaemonError> {
     let (control_addr, listener) = control::bind_listener(None).await?;
     tracing::info!(%control_addr, "control server listening");
 
+    let default_icon_path = match cover::ensure_default_icon(&cache_dir) {
+        Ok(path) => Some(path),
+        Err(err) => {
+            tracing::warn!(%err, "failed to write default notification icon; notifications will have none");
+            None
+        }
+    };
+
     let engine = Arc::new(Engine {
         store: Arc::new(store),
         config: Arc::new(config.clone()),
@@ -67,6 +76,9 @@ pub async fn run(config: Config) -> Result<(), DaemonError> {
         control_base_url: format!("http://{control_addr}"),
         control_token: control::generate_token(),
         resolution_wait_by_source,
+        http_client: client.clone(),
+        cache_dir,
+        default_icon_path,
     });
 
     tokio::spawn(control::serve(engine.clone(), listener));

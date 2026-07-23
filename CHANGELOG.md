@@ -62,3 +62,36 @@ follows [Keep a Changelog](https://keepachangelog.com/).
   schema, and `Store::list_seen_for_episode` for the manual "Download"
   action to re-derive the favourite available variant.
 - `docs/downloads.md`, `docs/notifications.md`.
+
+### Nix packaging
+- `flake.nix` now builds `anime-notif` via crane (`packages.default`, with
+  `checks.anime-notif` running the full offline test suite inside the Nix
+  sandbox — `pkgs.rustPlatform.bindgenHook` was needed for `libsql-ffi`'s
+  bindgen-based SQLite build to work under sandboxed `nix build`, since
+  that doesn't inherit an ambient libclang the way `nix develop` can).
+- `nixosModules.default` (`services.anime-notif`): systemd service,
+  dedicated user/group, sandboxed unit
+  (`ProtectSystem`/`ProtectHome`/`NoNewPrivileges`/...), `settings` typed
+  via `pkgs.formats.toml {}` so the full `config.toml` schema is available
+  as Nix. Verified with a `nixosTest` that boots a VM and confirms the
+  service reaches `active` and the control server logs as listening.
+- `homeManagerModules.default` (`services.anime-notif`): `systemd --user`
+  on Linux, a `launchd` agent on macOS. Verified with an eval-only check
+  against `home-manager.lib.homeManagerConfiguration`.
+- `overlays.default`, `apps.default` (`nix run`).
+- Both modules default `RUST_LOG` to `info` (configurable via
+  `services.anime-notif.logLevel`) — found via the `nixosTest`, which
+  showed a perfectly "active" service logging nothing at all, since
+  anime-notif is silent by default without `RUST_LOG` set.
+- `skills/create-source-plugin/`: a user-downloadable, agent-agnostic
+  skill that generates a source plugin from a pasted API request/response,
+  with a self-contained schema reference and the SubsPlease plugin as a
+  worked example.
+- `docs/nix.md`.
+
+### Cover art
+- `anime-notif-daemon::cover`: fetches and caches a release's cover image
+  (keyed by URL hash) for the notification icon, falling back to a bundled
+  default icon (`assets/icon.svg`, embedded via `include_bytes!` and
+  written to the cache directory once at startup rather than resolved as
+  an installed data file at runtime).

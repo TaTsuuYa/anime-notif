@@ -3,8 +3,8 @@
 A source plugin is a single, shareable TOML file describing how to poll a
 JSON API for anime releases and where, in its response, to find each field.
 No code — anyone can write and share one. This page is the format
-reference; `skills/create-source-plugin/` (added once it lands) generates
-one for you from a pasted API request and sample response.
+reference; `skills/create-source-plugin/` generates one for you from a
+pasted API request and sample response.
 
 ## Minimal example: SubsPlease
 
@@ -34,9 +34,9 @@ method     = { default = "magnet" }
 link       = { path = ".magnet" }
 ```
 
-Run `anime-notif source test sources/subsplease.toml` (once the CLI lands)
-to fetch the live endpoint and print the normalized releases — the fastest
-way to iterate on a plugin.
+Run `anime-notif source test sources/subsplease.toml` to fetch the live
+endpoint and print the normalized releases — the fastest way to iterate on
+a plugin (see `docs/cli.md`).
 
 ## Top-level fields
 
@@ -138,4 +138,4 @@ regex on the raw value (as the SubsPlease example does), and
 `config.toml`'s `sources` list accepts local paths, `http(s)://` URLs to a
 shared plugin file (fetched and cached locally, with an optional pinned
 SHA-256 checksum), or, in Nix, a store path from another flake's package
-output (see `docs/nix.md`, added once the Nix outputs land).
+output (see `docs/nix.md`).

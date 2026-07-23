@@ -43,10 +43,13 @@ place regardless of how the click happened:
 
 ## Cover art
 
-Not implemented yet. Once a source provides `cover` (see
-`docs/sources.md`), the daemon will fetch and cache the image and set it as
-the notification icon, falling back to the bundled app icon when a source
-doesn't provide one. Lands alongside the Windows/macOS notifier work.
+If a release has a `cover` URL (see `docs/sources.md`), the daemon fetches
+it and caches it locally (keyed by URL hash — an image is only ever
+downloaded once) and sets it as the notification icon. If the source
+doesn't provide one, or the fetch fails, it falls back to the bundled
+default icon (`assets/icon.svg`, embedded in the binary and written to the
+cache directory once at startup — see `anime-notif-daemon`'s `cover`
+module).
 
 ## Security note
 

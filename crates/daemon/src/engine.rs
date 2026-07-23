@@ -19,6 +19,7 @@ use anime_notif_download::{DownloadRequest, Downloader};
 use anime_notif_notify::{Notification, NotificationAction, Notifier};
 use anime_notif_store::{InteractionKind, SeriesRow, Store};
 
+use crate::cover;
 use crate::error::EngineError;
 use crate::resolution;
 
@@ -45,6 +46,14 @@ pub struct Engine {
     /// `resolution_wait`), falling back to
     /// `config.downloads.resolution_wait` when a source has none.
     pub resolution_wait_by_source: HashMap<String, Duration>,
+    /// HTTP client used to fetch cover art (separate from the one used to
+    /// poll sources, so a slow/broken cover host can't starve polling).
+    pub http_client: reqwest::Client,
+    /// Where fetched cover art (and the default icon) are cached.
+    pub cache_dir: std::path::PathBuf,
+    /// Path to the bundled default icon, pre-written to `cache_dir` at
+    /// startup; used when a release has no cover or its fetch fails.
+    pub default_icon_path: Option<std::path::PathBuf>,
 }
 
 impl Engine {
@@ -281,13 +290,20 @@ impl Engine {
             });
         }
 
+        let icon_path = match &chosen.cover_url {
+            Some(url) => cover::fetch_cover_cached(&self.http_client, &self.cache_dir, url)
+                .await
+                .or_else(|| self.default_icon_path.clone()),
+            None => self.default_icon_path.clone(),
+        };
+
         let notification = Notification {
             title: series.title.clone(),
             body: format!(
                 "Episode {} [{}] via {}",
                 chosen.episode, chosen.resolution, chosen.method
             ),
-            icon_path: None, // cover art fetch/cache lands with cross-platform notifications
+            icon_path,
             actions,
         };
         self.notifier.notify(&notification)?;
@@ -460,6 +476,19 @@ mod tests {
         }
     }
 
+    fn release_with_cover(
+        series: &str,
+        episode: &str,
+        resolution: &str,
+        method: DownloadMethod,
+        cover_url: &str,
+    ) -> Release {
+        Release {
+            cover_url: Some(cover_url.to_string()),
+            ..release(series, episode, resolution, method)
+        }
+    }
+
     async fn make_engine(config: Config) -> (Engine, Arc<NullNotifier>, Arc<FakeDownloader>) {
         let store = Arc::new(Store::open_in_memory().await.unwrap());
         let notifier = Arc::new(NullNotifier::new());
@@ -472,6 +501,9 @@ mod tests {
             control_base_url: "http://127.0.0.1:1".into(),
             control_token: "test-token".into(),
             resolution_wait_by_source: HashMap::new(),
+            http_client: reqwest::Client::new(),
+            cache_dir: std::env::temp_dir(),
+            default_icon_path: None,
         };
         (engine, notifier, downloader)
     }
@@ -680,5 +712,60 @@ mod tests {
         let (engine, _notifier, _downloader) = make_engine(Config::default()).await;
         let msg = engine.handle_action("download", 9999, "1").await.unwrap();
         assert!(msg.contains("No such show"));
+    }
+
+    #[tokio::test]
+    async fn notification_uses_fetched_cover_art_when_available() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/cover.jpg"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"cover-bytes".to_vec()))
+            .mount(&server)
+            .await;
+
+        let (mut engine, notifier, _downloader) = make_engine(Config::default()).await;
+        let cover_cache_dir = tempfile::tempdir().unwrap();
+        engine.cache_dir = cover_cache_dir.path().to_path_buf();
+
+        let cover_url = format!("{}/cover.jpg", server.uri());
+        engine
+            .process_poll(vec![release_with_cover(
+                "One Piece",
+                "1121",
+                "1080",
+                DownloadMethod::Magnet,
+                &cover_url,
+            )])
+            .await
+            .unwrap();
+
+        let sent = notifier.sent.lock().unwrap();
+        assert_eq!(sent.len(), 1);
+        let icon = sent[0].icon_path.as_ref().expect("expected an icon path");
+        assert_eq!(std::fs::read(icon).unwrap(), b"cover-bytes");
+    }
+
+    #[tokio::test]
+    async fn notification_falls_back_to_default_icon_when_no_cover() {
+        let (mut engine, notifier, _downloader) = make_engine(Config::default()).await;
+        let icon_dir = tempfile::tempdir().unwrap();
+        let default_icon = crate::cover::ensure_default_icon(icon_dir.path()).unwrap();
+        engine.default_icon_path = Some(default_icon.clone());
+
+        engine
+            .process_poll(vec![release(
+                "One Piece",
+                "1121",
+                "1080",
+                DownloadMethod::Magnet,
+            )])
+            .await
+            .unwrap();
+
+        let sent = notifier.sent.lock().unwrap();
+        assert_eq!(sent[0].icon_path, Some(default_icon));
     }
 }

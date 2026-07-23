@@ -129,9 +129,43 @@ Ties everything together:
   from serving (`bind_listener` then `serve`) because the bound port is
   needed to build `Engine.control_base_url`, but serving needs the
   already-built `Engine` as request state.
+- [`cover`](../crates/daemon/src/cover.rs) — cover art fetch/cache for
+  notification icons. The default icon (`assets/icon.svg`) is embedded in
+  the binary via `include_bytes!` and written out to the cache directory
+  once at startup, rather than resolved as an installed data file at
+  runtime — one less thing the Nix package (or any other packaging) has to
+  get right.
 
 See `docs/downloads.md` and `docs/notifications.md` for the user-facing
 behavior this implements.
+
+## Nix packaging
+
+`flake.nix` builds the workspace with [crane](https://github.com/ipetkov/crane)
+(`packages.default`/`packages.anime-notif`), including
+`pkgs.rustPlatform.bindgenHook` in `nativeBuildInputs` since `libsql-ffi`
+builds SQLite via bindgen (needs `libclang`, which the sandboxed `nix build`
+doesn't get from an ambient environment the way an interactive `nix develop`
+might). The package derivation runs the full offline test suite
+(`doCheck = true`) — the live-network subsplease test is `#[ignore]`d so it
+doesn't run there.
+
+`nix/modules/nixos.nix` and `nix/modules/home-manager.nix` are both plain
+functions of `self` (the flake), returning the actual module — this lets
+`services.anime-notif.package` default to `self.packages.${pkgs.system}.default`
+without requiring the user to also apply an overlay. Both modules expose a
+`settings` option typed via `pkgs.formats.toml {}`, i.e. **freeform Nix
+matching `config.toml`'s schema 1:1** rather than a hand-written typed
+submodule for every nested field (the standard nixpkgs pattern for
+"arbitrary app config" — see e.g. `services.prometheus.settings`) — so
+anything in `docs/config.md` can be written directly as Nix.
+
+`checks` (run by `nix flake check`) covers `clippy -D warnings`, `cargo
+fmt --check`, the package build (which includes tests), a `nixosTest` that
+boots a VM with the module enabled and confirms `anime-notif.service`
+reaches `active` and logs "control server listening", and an eval-only
+check that home-manager's `homeManagerConfiguration` accepts the
+home-manager module without error.
 
 ### `store`
 
