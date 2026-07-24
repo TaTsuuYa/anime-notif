@@ -101,3 +101,17 @@ follows [Keep a Changelog](https://keepachangelog.com/).
   (Linux/Windows/macOS x86_64, macOS aarch64) with SHA-256 checksums to a
   GitHub release, triggered on `v*` tag pushes. Not yet exercised by an
   actual tag push.
+
+### Fixed
+- Real deployment (a user's own NixOS flake) caught two gaps the local
+  `nixosTest` didn't: (1) the NixOS module never put `anime-notif` on
+  `PATH` — `services.anime-notif` now adds the package to
+  `environment.systemPackages`, with a VM-test regression check
+  (`which anime-notif`); (2) notifications silently never arrive when
+  `serve` runs via the **NixOS** module, because desktop notifications
+  need the login session's D-Bus bus and a `systemd --system` service
+  under a dedicated system user has no such bus. This isn't fixable in the
+  system-service model — `docs/nix.md` now leads with a callout
+  explaining it and pointing at the **home-manager** module (a
+  `systemd --user` service, which does have the session bus) as the path
+  that actually delivers notifications.

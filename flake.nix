@@ -128,6 +128,10 @@
                 machine.succeed("systemctl is-active anime-notif.service")
                 journal = machine.succeed("journalctl -u anime-notif.service --no-pager")
                 assert "control server listening" in journal, f"expected control server log line, got:\n{journal}"
+                # The CLI must be usable interactively, independent of the
+                # service itself (regression check: this was missing until
+                # a real deployment caught it).
+                machine.succeed("which anime-notif")
               '';
             };
 

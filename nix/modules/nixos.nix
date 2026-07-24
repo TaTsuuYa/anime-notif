@@ -82,6 +82,8 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    environment.systemPackages = [ cfg.package ];
+
     users.users = lib.mkIf (cfg.user == "anime-notif") {
       anime-notif = {
         isSystemUser = true;

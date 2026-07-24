@@ -3,6 +3,18 @@
 anime-notif is developed as a Nix flake and is meant to be installed the
 same way, whether or not you use NixOS.
 
+> **Want desktop notifications? Use the home-manager module, not the NixOS
+> module, to run `serve`.** Desktop notifications go over your login
+> session's D-Bus bus. The NixOS module runs `anime-notif serve` as a
+> `systemd --system` service under a dedicated system user — that user has
+> no session bus, so every notification attempt fails (silently, into the
+> journal — nothing crashes, nothing on your screen either). The
+> home-manager module runs it as *your* `systemd --user` service instead,
+> which does have your session bus. See "home-manager" below. The NixOS
+> module is still the right choice if you only want polling/auto-download
+> without notifications, or you're intentionally running this on a
+> headless box.
+
 ## Flake outputs
 
 | Output | What it is |
@@ -57,7 +69,13 @@ to the Nix store and passed via `$ANIME_NOTIF_CONFIG` — see
 1:1 onto `config.toml`. The unit is reasonably sandboxed
 (`ProtectSystem = "strict"`, `ProtectHome`, `NoNewPrivileges`, ...), with
 write access only to `services.anime-notif.stateDir` (default
-`/var/lib/anime-notif`).
+`/var/lib/anime-notif`). No desktop notifications from this path — see the
+callout at the top of this page.
+
+The module also puts `cfg.package` on `environment.systemPackages`, so the
+`anime-notif` CLI (`list`/`<show> set ...`/`source test`/...) is available
+interactively regardless of whether you use this module or home-manager's
+to run the daemon itself.
 
 Since `settings` is read-only Nix-store content, day-to-day show
 management (`anime-notif <show> set category liked`, `rm`, ...) still goes
@@ -83,7 +101,15 @@ your user's permissions) against the database — see `docs/cli.md`. The
 ```
 
 Writes `config.toml` to `$XDG_CONFIG_HOME/anime-notif/config.toml` and runs
-it as a `systemd --user` service on Linux, or a `launchd` agent on macOS.
+it as a `systemd --user` service on Linux, or a `launchd` agent on macOS —
+**this is the path that gets you desktop notifications**, since it runs
+inside your own login session.
+
+If you also want to keep the daemon's state/downloads under a shared
+system location rather than your home directory, set
+`settings.downloads.base_dir` and `settings.general.db.path` accordingly;
+running as your user just decides who the *process* runs as, not where its
+files live.
 
 ## Source plugins from another flake
 
