@@ -20,6 +20,8 @@ pub struct Config {
     pub general: General,
     /// Download path resolution and favourite method/resolution.
     pub downloads: Downloads,
+    /// Notification behavior not covered by categories (click-to-open, ...).
+    pub notifications: NotificationsConfig,
     /// Category definitions (seeded with `liked`/`normal`/`uninterested`).
     pub categories: Vec<CategoryDef>,
     /// Declarative rules that seed/override a series' category by matching
@@ -38,9 +40,37 @@ impl Default for Config {
         Self {
             general: General::default(),
             downloads: Downloads::default(),
+            notifications: NotificationsConfig::default(),
             categories: CategoryDef::defaults(),
             rules: Vec::new(),
             sources: Vec::new(),
+        }
+    }
+}
+
+/// Notification behavior that isn't per-category.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct NotificationsConfig {
+    /// Whether clicking a notification (its body, not one of the
+    /// download/whitelist/blacklist buttons) opens the show's page — see
+    /// `fields.show_url` in `docs/sources.md`. Has no effect for a release
+    /// whose source doesn't provide a `show_url`. Defaults to `true`.
+    pub open_show_page: bool,
+    /// Command used to open a show's page, e.g. `"firefox {url}"`. Unset
+    /// (the default) uses the platform default opener (`xdg-open` on
+    /// Linux, `open` on macOS, `cmd /C start` on Windows) — the same
+    /// mechanism `magnet` links use, but configured independently, since a
+    /// user who points `downloads.methods.magnet.command` at a torrent
+    /// client would not want show-page clicks going there too.
+    pub open_command: Option<String>,
+}
+
+impl Default for NotificationsConfig {
+    fn default() -> Self {
+        Self {
+            open_show_page: true,
+            open_command: None,
         }
     }
 }
@@ -406,6 +436,28 @@ mod tests {
     #[test]
     fn defaults_are_valid() {
         Config::default().validate().unwrap();
+    }
+
+    #[test]
+    fn notifications_defaults_to_open_show_page_enabled() {
+        let cfg = Config::default();
+        assert!(cfg.notifications.open_show_page);
+        assert_eq!(cfg.notifications.open_command, None);
+    }
+
+    #[test]
+    fn notifications_can_be_configured() {
+        let toml = r#"
+            [notifications]
+            open_show_page = false
+            open_command = "firefox {url}"
+        "#;
+        let cfg = Config::parse(toml, Path::new("t.toml")).unwrap();
+        assert!(!cfg.notifications.open_show_page);
+        assert_eq!(
+            cfg.notifications.open_command.as_deref(),
+            Some("firefox {url}")
+        );
     }
 
     #[test]

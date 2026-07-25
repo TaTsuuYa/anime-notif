@@ -67,7 +67,7 @@ Not supported: pipes, filters, functions, quoted/special field names.
 ## Field extraction rules
 
 Every field (`fields.series`, `fields.episode`, `fields.season`,
-`fields.cover`, `fields.id`, `fields.variant.resolution`,
+`fields.cover`, `fields.show_url`, `fields.id`, `fields.variant.resolution`,
 `fields.variant.method`, `fields.variant.link`) is a table:
 
 ```toml
@@ -84,12 +84,14 @@ Resolved in this order:
    treated as missing (falls through to `default`).
 3. **`default`** (optional) — used when `path` is unset, finds nothing, or
    the regex doesn't match.
-4. **`prefix`** (optional) — prepended to the final value (e.g. to
-   absolutize a relative image/link URL).
+4. **`prefix`**/**`suffix`** (optional) — prepended/appended to the final
+   value. Use both to build a page URL from a bare slug:
+   `show_url = { path = ".page", prefix = "https://example.com/shows/", suffix = "/" }`.
 
 `series`, `resolution`, `method`, and `link` are **required** — an item/
 variant missing one (after the above) is skipped with a warning rather than
-crashing the whole poll. Everything else is optional.
+crashing the whole poll. Everything else, including `show_url` (used as a
+notification's click-to-open-show-page target), is optional.
 
 `method`'s final value must be `direct`, `torrent`, or `magnet` (a few
 synonyms like `http`/`url`/`torrent_file` are also accepted).

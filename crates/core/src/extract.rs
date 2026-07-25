@@ -44,6 +44,7 @@ pub fn extract(source: &CompiledSource, root: &Value) -> ExtractionResult {
 
         let season = source.fields.season.extract(item);
         let cover_url = source.fields.cover.extract(item);
+        let show_url = source.fields.show_url.extract(item);
         let raw_id = source.fields.id.extract(item);
 
         for (j, variant) in source.variants.eval_all(item).into_iter().enumerate() {
@@ -81,6 +82,7 @@ pub fn extract(source: &CompiledSource, root: &Value) -> ExtractionResult {
                 method,
                 link,
                 cover_url: cover_url.clone(),
+                show_url: show_url.clone(),
                 raw_id: raw_id.clone(),
             });
         }

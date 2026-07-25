@@ -273,7 +273,7 @@ impl Engine {
         let mut actions = vec![NotificationAction {
             id: "download".into(),
             label: "Download".into(),
-            url: self.action_url("download", series.id, &chosen.episode),
+            url: self.action_url("download", series.id, &chosen.episode, None),
         }];
         // Categories that don't auto-download are the "undecided" ones —
         // offer to classify the show, per the notification spec.
@@ -281,13 +281,25 @@ impl Engine {
             actions.push(NotificationAction {
                 id: "whitelist".into(),
                 label: "Whitelist".into(),
-                url: self.action_url("whitelist", series.id, &chosen.episode),
+                url: self.action_url("whitelist", series.id, &chosen.episode, None),
             });
             actions.push(NotificationAction {
                 id: "blacklist".into(),
                 label: "Blacklist".into(),
-                url: self.action_url("blacklist", series.id, &chosen.episode),
+                url: self.action_url("blacklist", series.id, &chosen.episode, None),
             });
+        }
+        // "default" is the reserved action id most Linux notification
+        // daemons invoke when the notification body itself (not a named
+        // button) is clicked — see docs/notifications.md.
+        if self.config.notifications.open_show_page {
+            if let Some(show_url) = &chosen.show_url {
+                actions.push(NotificationAction {
+                    id: "default".into(),
+                    label: "Open".into(),
+                    url: self.action_url("open_show", series.id, &chosen.episode, Some(show_url)),
+                });
+            }
         }
 
         let icon_path = match &chosen.cover_url {
@@ -310,13 +322,27 @@ impl Engine {
         Ok(())
     }
 
-    fn action_url(&self, kind: &str, series_id: i64, episode: &str) -> String {
+    /// Builds an action URL; `target_url` is only used by the `open_show`
+    /// kind (the show page to open).
+    fn action_url(
+        &self,
+        kind: &str,
+        series_id: i64,
+        episode: &str,
+        target_url: Option<&str>,
+    ) -> String {
         let episode_enc: String =
             url::form_urlencoded::byte_serialize(episode.as_bytes()).collect();
-        format!(
+        let mut built = format!(
             "{}/action?token={}&kind={kind}&series_id={series_id}&episode={episode_enc}",
             self.control_base_url, self.control_token
-        )
+        );
+        if let Some(target_url) = target_url {
+            let encoded: String =
+                url::form_urlencoded::byte_serialize(target_url.as_bytes()).collect();
+            built.push_str(&format!("&url={encoded}"));
+        }
+        built
     }
 
     fn category_for(&self, name: &str) -> CategoryDef {
@@ -332,25 +358,32 @@ impl Engine {
             })
     }
 
-    /// Executes a `download`/`whitelist`/`blacklist` action against an
-    /// already-known series/episode — the shared handler behind both the
-    /// control server's HTTP endpoint and native notification action
-    /// callbacks. Returns a short human-readable result message.
+    /// Executes a `download`/`whitelist`/`blacklist`/`open_show` action —
+    /// the shared handler behind both the control server's HTTP endpoint
+    /// and native notification action callbacks. `url` is only meaningful
+    /// for `open_show` (the show page to open). Returns a short
+    /// human-readable result message, and shows a confirmation
+    /// notification for every kind except `open_show` (whose own visible
+    /// effect, a browser opening, is confirmation enough).
     pub async fn handle_action(
         &self,
         kind: &str,
         series_id: i64,
         episode: &str,
+        url: Option<&str>,
     ) -> Result<String, EngineError> {
         let Some(series) = self.store.get_by_id(series_id).await? else {
+            tracing::warn!(kind, series_id, "action for unknown series");
             return Ok(format!("No such show (id {series_id})"));
         };
+        tracing::info!(kind, series = %series.title, episode, "handling notification action");
 
-        match kind {
+        let result = match kind {
             "download" => self.handle_download_action(&series, episode).await,
             "whitelist" => {
                 self.handle_reclassify_action(
                     &series,
+                    episode,
                     |c| c.auto_download,
                     "liked",
                     "No auto-download category is defined",
@@ -360,27 +393,44 @@ impl Engine {
             "blacklist" => {
                 self.handle_reclassify_action(
                     &series,
+                    episode,
                     |c| !c.notify && !c.auto_download,
                     "uninterested",
                     "No blacklist-like category is defined",
                 )
                 .await
             }
+            "open_show" => self.handle_open_show_action(url).await,
             other => Ok(format!("Unknown action {other:?}")),
+        };
+
+        match &result {
+            Ok(message) => tracing::info!(kind, series = %series.title, %message, "action handled"),
+            Err(err) => tracing::error!(kind, series = %series.title, %err, "action failed"),
         }
+
+        if kind != "open_show" {
+            if let Ok(message) = &result {
+                self.send_confirmation(&series.title, message).await;
+            }
+        }
+
+        result
     }
 
-    async fn handle_download_action(
+    /// Reconstructs every known variant of `(series, episode)` from the
+    /// `seen` log and picks the favourite one (desired resolution/method,
+    /// falling back like the automatic resolve path does). Shared by the
+    /// manual "Download" action and by whitelisting triggering an
+    /// immediate download of the episode that was being notified about.
+    async fn pick_best_available(
         &self,
         series: &SeriesRow,
         episode: &str,
-    ) -> Result<String, EngineError> {
+    ) -> Result<Option<Release>, EngineError> {
         let seen = self.store.list_seen_for_episode(series.id, episode).await?;
         if seen.is_empty() {
-            return Ok(format!(
-                "No known download for {:?} episode {episode}",
-                series.title
-            ));
+            return Ok(None);
         }
         let releases: Vec<Release> = seen
             .iter()
@@ -393,6 +443,7 @@ impl Engine {
                 method: DownloadMethod::parse(&s.method).unwrap_or(DownloadMethod::Direct),
                 link: s.link.clone(),
                 cover_url: None,
+                show_url: None,
                 raw_id: None,
             })
             .collect();
@@ -407,17 +458,40 @@ impl Engine {
                 &self.config.downloads.resolution_fallback,
                 self.config.downloads.default_method,
             )
-        });
-        self.trigger_download(series, chosen).await?;
-        Ok(format!(
-            "Downloading {:?} episode {} [{}]",
-            series.title, chosen.episode, chosen.resolution
-        ))
+        })
+        .clone();
+        Ok(Some(chosen))
     }
 
+    async fn handle_download_action(
+        &self,
+        series: &SeriesRow,
+        episode: &str,
+    ) -> Result<String, EngineError> {
+        match self.pick_best_available(series, episode).await? {
+            Some(chosen) => {
+                self.trigger_download(series, &chosen).await?;
+                Ok(format!(
+                    "Downloading {:?} episode {} [{}]",
+                    series.title, chosen.episode, chosen.resolution
+                ))
+            }
+            None => Ok(format!(
+                "No known download for {:?} episode {episode}",
+                series.title
+            )),
+        }
+    }
+
+    /// Reclassifies `series` to whichever category matches `matches`
+    /// (preferring one literally named `preferred_name`), and, if that
+    /// category auto-downloads, immediately downloads `episode` too —
+    /// whitelisting a show should act on the episode you were just
+    /// notified about, not just change behavior for future ones.
     async fn handle_reclassify_action(
         &self,
         series: &SeriesRow,
+        episode: &str,
         matches: impl Fn(&CategoryDef) -> bool,
         preferred_name: &str,
         none_found_message: &str,
@@ -428,13 +502,55 @@ impl Engine {
             .iter()
             .find(|c| c.name == preferred_name)
             .or_else(|| self.config.categories.iter().find(|c| matches(c)))
-            .map(|c| c.name.clone());
-        match target {
-            Some(name) => {
-                self.store.set_category(series.id, &name).await?;
-                Ok(format!("{:?} set to category {name:?}", series.title))
+            .cloned();
+        let Some(target) = target else {
+            return Ok(none_found_message.to_string());
+        };
+        self.store.set_category(series.id, &target.name).await?;
+
+        if !target.auto_download {
+            return Ok(format!(
+                "{:?} set to category {:?}",
+                series.title, target.name
+            ));
+        }
+
+        match self.pick_best_available(series, episode).await? {
+            Some(chosen) => {
+                self.trigger_download(series, &chosen).await?;
+                Ok(format!(
+                    "{:?} set to category {:?}; downloading episode {} [{}]",
+                    series.title, target.name, chosen.episode, chosen.resolution
+                ))
             }
-            None => Ok(none_found_message.to_string()),
+            None => Ok(format!(
+                "{:?} set to category {:?} (no known download yet for episode {episode})",
+                series.title, target.name
+            )),
+        }
+    }
+
+    async fn handle_open_show_action(&self, url: Option<&str>) -> Result<String, EngineError> {
+        let Some(url) = url else {
+            return Ok("No show URL was provided".to_string());
+        };
+        anime_notif_download::open_url(url, self.config.notifications.open_command.as_deref())?;
+        Ok(format!("Opened {url}"))
+    }
+
+    /// Shows a plain, action-less notification confirming the result of a
+    /// download/whitelist/blacklist click — headless action clicks (a
+    /// background HTTP request, not a browser tab) otherwise give the user
+    /// no feedback at all that anything happened.
+    async fn send_confirmation(&self, title: &str, message: &str) {
+        let notification = Notification {
+            title: title.to_string(),
+            body: message.to_string(),
+            icon_path: self.default_icon_path.clone(),
+            actions: Vec::new(),
+        };
+        if let Err(err) = self.notifier.notify(&notification) {
+            tracing::warn!(%err, "failed to show confirmation notification");
         }
     }
 }
@@ -472,6 +588,7 @@ mod tests {
             method,
             link: format!("magnet:?xt={series}-{episode}-{resolution}"),
             cover_url: None,
+            show_url: None,
             raw_id: None,
         }
     }
@@ -675,7 +792,7 @@ mod tests {
 
         let series = &engine.store.list_all().await.unwrap()[0];
         let msg = engine
-            .handle_action("download", series.id, "1121")
+            .handle_action("download", series.id, "1121", None)
             .await
             .unwrap();
         assert!(msg.contains("1080"));
@@ -693,14 +810,14 @@ mod tests {
         assert_eq!(series.category, "normal");
 
         engine
-            .handle_action("whitelist", series.id, "1")
+            .handle_action("whitelist", series.id, "1", None)
             .await
             .unwrap();
         let updated = engine.store.get_by_id(series.id).await.unwrap().unwrap();
         assert_eq!(updated.category, "liked");
 
         engine
-            .handle_action("blacklist", series.id, "1")
+            .handle_action("blacklist", series.id, "1", None)
             .await
             .unwrap();
         let updated = engine.store.get_by_id(series.id).await.unwrap().unwrap();
@@ -708,10 +825,165 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn whitelist_triggers_immediate_download_of_current_episode() {
+        let (engine, _notifier, downloader) = make_engine(Config::default()).await;
+        engine
+            .process_poll(vec![release("Naruto", "1", "1080", DownloadMethod::Magnet)])
+            .await
+            .unwrap();
+        let series = &engine.store.list_all().await.unwrap()[0];
+        assert!(downloader.requests.lock().unwrap().is_empty());
+
+        let msg = engine
+            .handle_action("whitelist", series.id, "1", None)
+            .await
+            .unwrap();
+
+        assert_eq!(downloader.requests.lock().unwrap().len(), 1);
+        assert!(msg.contains("liked"));
+        assert!(msg.contains("downloading"));
+    }
+
+    #[tokio::test]
+    async fn blacklist_does_not_trigger_a_download() {
+        let (engine, _notifier, downloader) = make_engine(Config::default()).await;
+        engine
+            .process_poll(vec![release("Naruto", "1", "1080", DownloadMethod::Magnet)])
+            .await
+            .unwrap();
+
+        let series = &engine.store.list_all().await.unwrap()[0];
+        engine
+            .handle_action("blacklist", series.id, "1", None)
+            .await
+            .unwrap();
+
+        assert!(downloader.requests.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
     async fn handle_action_unknown_series_is_reported_not_erred() {
         let (engine, _notifier, _downloader) = make_engine(Config::default()).await;
-        let msg = engine.handle_action("download", 9999, "1").await.unwrap();
+        let msg = engine
+            .handle_action("download", 9999, "1", None)
+            .await
+            .unwrap();
         assert!(msg.contains("No such show"));
+    }
+
+    #[tokio::test]
+    async fn open_show_action_runs_configured_command() {
+        let (mut engine, _notifier, _downloader) = make_engine(Config::default()).await;
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("opened");
+        engine.config = Arc::new({
+            let mut cfg = Config::default();
+            cfg.notifications.open_command = Some(format!("touch {}", marker.display()));
+            cfg
+        });
+        engine
+            .process_poll(vec![release("Naruto", "1", "1080", DownloadMethod::Magnet)])
+            .await
+            .unwrap();
+        let series = &engine.store.list_all().await.unwrap()[0];
+
+        let msg = engine
+            .handle_action(
+                "open_show",
+                series.id,
+                "1",
+                Some("https://subsplease.org/shows/naruto/"),
+            )
+            .await
+            .unwrap();
+        assert!(msg.contains("Opened"));
+
+        for _ in 0..50 {
+            if marker.exists() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(marker.exists());
+    }
+
+    #[tokio::test]
+    async fn open_show_action_without_url_is_reported_not_erred() {
+        let (engine, _notifier, _downloader) = make_engine(Config::default()).await;
+        engine
+            .process_poll(vec![release("Naruto", "1", "1080", DownloadMethod::Magnet)])
+            .await
+            .unwrap();
+        let series = &engine.store.list_all().await.unwrap()[0];
+
+        let msg = engine
+            .handle_action("open_show", series.id, "1", None)
+            .await
+            .unwrap();
+        assert!(msg.contains("No show URL"));
+    }
+
+    #[tokio::test]
+    async fn notification_includes_default_action_when_show_url_present_and_enabled() {
+        let (engine, notifier, _downloader) = make_engine(Config::default()).await;
+        let release_with_url = Release {
+            show_url: Some("https://subsplease.org/shows/naruto/".into()),
+            ..release("Naruto", "1", "1080", DownloadMethod::Magnet)
+        };
+        engine.process_poll(vec![release_with_url]).await.unwrap();
+
+        let sent = notifier.sent.lock().unwrap();
+        let default_action = sent[0].actions.iter().find(|a| a.id == "default");
+        assert!(default_action.is_some());
+        assert!(default_action.unwrap().url.contains("kind=open_show"));
+    }
+
+    #[tokio::test]
+    async fn notification_omits_default_action_when_open_show_page_disabled() {
+        let mut config = Config::default();
+        config.notifications.open_show_page = false;
+        let (engine, notifier, _downloader) = make_engine(config).await;
+        let release_with_url = Release {
+            show_url: Some("https://subsplease.org/shows/naruto/".into()),
+            ..release("Naruto", "1", "1080", DownloadMethod::Magnet)
+        };
+        engine.process_poll(vec![release_with_url]).await.unwrap();
+
+        let sent = notifier.sent.lock().unwrap();
+        assert!(!sent[0].actions.iter().any(|a| a.id == "default"));
+    }
+
+    #[tokio::test]
+    async fn notification_omits_default_action_when_source_has_no_show_url() {
+        let (engine, notifier, _downloader) = make_engine(Config::default()).await;
+        engine
+            .process_poll(vec![release("Naruto", "1", "1080", DownloadMethod::Magnet)])
+            .await
+            .unwrap();
+
+        let sent = notifier.sent.lock().unwrap();
+        assert!(!sent[0].actions.iter().any(|a| a.id == "default"));
+    }
+
+    #[tokio::test]
+    async fn actions_other_than_open_show_send_a_confirmation_notification() {
+        let (engine, notifier, _downloader) = make_engine(Config::default()).await;
+        engine
+            .process_poll(vec![release("Naruto", "1", "1080", DownloadMethod::Magnet)])
+            .await
+            .unwrap();
+        let series = &engine.store.list_all().await.unwrap()[0];
+        notifier.sent.lock().unwrap().clear();
+
+        engine
+            .handle_action("download", series.id, "1", None)
+            .await
+            .unwrap();
+
+        // The original episode notification plus a confirmation = at least
+        // one extra notification beyond whatever else was already sent.
+        assert_eq!(notifier.sent.lock().unwrap().len(), 1);
+        assert!(notifier.sent.lock().unwrap()[0].actions.is_empty());
     }
 
     #[tokio::test]

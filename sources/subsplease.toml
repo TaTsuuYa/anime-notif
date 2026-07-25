@@ -19,10 +19,11 @@ items = ".[]"
 variants = ".downloads[]"
 
 [fields]
-series  = { path = ".show" }
-episode = { path = ".episode", default = "?" }
-cover   = { path = ".image_url", prefix = "https://subsplease.org" }
-id      = { path = ".page" }
+series   = { path = ".show" }
+episode  = { path = ".episode", default = "?" }
+cover    = { path = ".image_url", prefix = "https://subsplease.org" }
+show_url = { path = ".page", prefix = "https://subsplease.org/shows/", suffix = "/" }
+id       = { path = ".page" }
 
 [fields.variant]
 # Raw values are bare digits ("480"/"720"/"1080") already, but the regex

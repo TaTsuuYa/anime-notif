@@ -47,10 +47,15 @@ the same commit as the code change.
    one item*:
    - `fields.series` (required) — the show's title.
    - `fields.episode` — give it `default = "?"` if the API can omit it.
-   - `fields.season`, `fields.cover`, `fields.id` — optional; map them if
-     the data exists, otherwise leave them out entirely.
+   - `fields.season`, `fields.cover`, `fields.show_url`, `fields.id` —
+     optional; map them if the data exists, otherwise leave them out
+     entirely.
    - If `fields.cover`'s URL is relative (starts with `/`), set `prefix`
      to the site's origin (`https://example.com`) to absolutize it.
+   - If the API gives you a slug/id rather than a full show-page URL, build
+     one with `prefix`/`suffix` on `fields.show_url`, e.g.
+     `{ path = ".slug", prefix = "https://example.com/shows/", suffix = "/" }`.
+     This becomes the notification's click-to-open-show-page target.
 
 4. **Find the download variants.** Does one item carry one
    resolution/method/link, or several (e.g. a `downloads`/`files`/`links`

@@ -25,6 +25,9 @@ struct ActionParams {
     kind: String,
     series_id: i64,
     episode: String,
+    /// Only meaningful for `kind = "open_show"`: the show page to open.
+    #[serde(default)]
+    url: Option<String>,
 }
 
 async fn action_handler(
@@ -35,7 +38,12 @@ async fn action_handler(
         return Html("<h1>Forbidden</h1><p>Invalid or missing token.</p>".to_string());
     }
     match engine
-        .handle_action(&params.kind, params.series_id, &params.episode)
+        .handle_action(
+            &params.kind,
+            params.series_id,
+            &params.episode,
+            params.url.as_deref(),
+        )
         .await
     {
         Ok(message) => Html(format!("<h1>anime-notif</h1><p>{message}</p>")),

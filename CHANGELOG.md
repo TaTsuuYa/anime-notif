@@ -128,3 +128,52 @@ follows [Keep a Changelog](https://keepachangelog.com/).
   uses this for its real, previously-unhandled `Dr. Stone S3 (01-22)`
   batch entry; `docs/sources.md` and `skills/create-source-plugin/`'s
   schema reference document the feature.
+
+### Added
+- **Click-to-open-show-page.** Source plugins can declare `fields.show_url`
+  (a `FieldExtractor`, same as `cover`; `FieldExtractor` also gained a
+  `suffix` option alongside `prefix`, needed to build a page URL like
+  `https://subsplease.org/shows/<slug>/` from a bare slug). A new
+  `[notifications]` config section controls it: `open_show_page` (default
+  `true`) and `open_command` (default: platform opener, independent of
+  `downloads.methods.magnet.command`). When a release has a `show_url` and
+  the setting is enabled, its notification gets a `"default"` action — the
+  freedesktop convention for "click the notification body itself" — that
+  opens the page. `sources/subsplease.toml` now sets `show_url` for real,
+  confirmed against the live API. `anime-notif-download` gained a small
+  `open_url` helper (and `command::substitute` a `{url}` placeholder
+  alongside `{magnet}`/`{link}`) to run it, never through a shell, same as
+  every other command hand-off.
+- **Confirmation notifications.** Clicking Download/Whitelist/Blacklist now
+  pops a second, action-less notification with the result — those clicks
+  are a headless background HTTP request with no other way to show
+  feedback, so without this a working click and a silently-failed one
+  looked identical.
+
+### Fixed
+- **Whitelist now actually whitelists.** Clicking Whitelist changed a
+  show's category but never downloaded anything — reported as "the
+  default/preferred action should be triggered" when whitelisting.
+  `Engine::handle_reclassify_action` now downloads the episode you were
+  just notified about immediately when the target category auto-downloads
+  (reusing the same favourite-resolution/method selection as the manual
+  Download action, reconstructed from the `seen` log via a new shared
+  `pick_best_available` helper). Blacklist is unaffected (its target
+  category never auto-downloads).
+- **"Clicking Download does nothing"** — no single root cause could be
+  confirmed remotely (most likely a notification-daemon/desktop-environment
+  quirk around action delivery for banner popups, which is outside our
+  control), so this shipped two real, verifiable improvements instead of a
+  guess: (1) `anime-notif-notify`'s Linux backend had a latent bug where
+  the reserved `"default"` action id was unconditionally ignored — harmless
+  before, but would have silently broken the new click-to-open-show-page
+  feature; (2) notifications are now shown resident and non-expiring
+  (`Hint::Resident`, `Timeout::Never`) rather than using the notification
+  daemon's default, since a notification torn down or auto-dismissed before
+  it's clicked is indistinguishable from "the click didn't work"; (3) the
+  full click path is now logged at `info`/`debug` (`showing notification` →
+  `notification action clicked` → `action request delivered` →
+  `handling notification action` → `action handled`/`action failed`), so
+  the next time this happens `journalctl` shows exactly where it stopped
+  rather than nothing at all — see `docs/notifications.md`'s new
+  troubleshooting section.

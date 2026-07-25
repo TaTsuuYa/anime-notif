@@ -65,6 +65,10 @@ pub struct Release {
     pub link: String,
     /// Series cover image URL, if the source provides one.
     pub cover_url: Option<String>,
+    /// The show's page on the source's website, if the source provides
+    /// enough information to build one. Used as a notification's
+    /// click-to-open target (`docs/notifications.md`).
+    pub show_url: Option<String>,
     /// A source-provided stable id for the release, if any, used for dedup
     /// in preference to a computed hash.
     pub raw_id: Option<String>,
@@ -129,6 +133,7 @@ mod tests {
             method: DownloadMethod::Direct,
             link: link.into(),
             cover_url: None,
+            show_url: None,
             raw_id: None,
         }
     }

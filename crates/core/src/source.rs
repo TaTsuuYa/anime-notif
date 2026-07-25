@@ -79,6 +79,11 @@ pub struct FieldExtractor {
     /// relative image/link URL.
     #[serde(default)]
     pub prefix: Option<String>,
+    /// String appended to the extracted value, e.g. to build a page URL
+    /// from a slug (`prefix = "https://example.com/shows/"`,
+    /// `suffix = "/"`).
+    #[serde(default)]
+    pub suffix: Option<String>,
 }
 
 /// The `resolution`/`method`/`link` fields extracted per download variant.
@@ -114,6 +119,11 @@ pub struct FieldSet {
     /// Cover image URL.
     #[serde(default)]
     pub cover: FieldExtractor,
+    /// The show's page on the source's website, e.g. built from a slug via
+    /// `prefix`/`suffix`. Used as a notification's click-to-open target
+    /// (`docs/notifications.md`).
+    #[serde(default)]
+    pub show_url: FieldExtractor,
     /// A source-provided stable id, used for dedup in preference to a
     /// computed hash.
     #[serde(default)]
@@ -231,6 +241,7 @@ impl SourcePlugin {
             episode: compile_extractor("fields.episode", &self.fields.episode)?,
             season: compile_extractor("fields.season", &self.fields.season)?,
             cover: compile_extractor("fields.cover", &self.fields.cover)?,
+            show_url: compile_extractor("fields.show_url", &self.fields.show_url)?,
             id: compile_extractor("fields.id", &self.fields.id)?,
             variant: CompiledVariantFields {
                 resolution: compile_extractor(
@@ -295,6 +306,7 @@ fn compile_extractor(field: &str, raw: &FieldExtractor) -> Result<CompiledExtrac
         regex,
         default: raw.default.clone(),
         prefix: raw.prefix.clone(),
+        suffix: raw.suffix.clone(),
     })
 }
 
@@ -305,12 +317,13 @@ pub struct CompiledExtractor {
     regex: Option<Regex>,
     default: Option<String>,
     prefix: Option<String>,
+    suffix: Option<String>,
 }
 
 impl CompiledExtractor {
     /// Extracts this field's value from `value` (an item or a variant):
     /// evaluate `path` (if any) → apply `regex` (if any) → fall back to
-    /// `default` → apply `prefix`.
+    /// `default` → apply `prefix`/`suffix`.
     pub fn extract(&self, value: &Value) -> Option<String> {
         let mut result = self
             .path
@@ -328,9 +341,15 @@ impl CompiledExtractor {
 
         let result = result.or_else(|| self.default.clone());
 
-        result.map(|s| match &self.prefix {
-            Some(prefix) => format!("{prefix}{s}"),
-            None => s,
+        result.map(|s| {
+            let prefixed = match &self.prefix {
+                Some(prefix) => format!("{prefix}{s}"),
+                None => s,
+            };
+            match &self.suffix {
+                Some(suffix) => format!("{prefixed}{suffix}"),
+                None => prefixed,
+            }
         })
     }
 }
@@ -388,6 +407,8 @@ pub struct CompiledFieldSet {
     pub season: CompiledExtractor,
     /// Cover image URL extractor.
     pub cover: CompiledExtractor,
+    /// Show page URL extractor.
+    pub show_url: CompiledExtractor,
     /// Stable id extractor.
     pub id: CompiledExtractor,
     /// Per-variant extractors.
@@ -492,6 +513,23 @@ link       = { path = ".magnet" }
         assert_eq!(
             compiled.fields.cover.extract(&item),
             Some("https://subsplease.org/img/x.jpg".to_string())
+        );
+    }
+
+    #[test]
+    fn prefix_and_suffix_both_apply_for_show_url() {
+        let toml = SUBSPLEASE_TOML.replace(
+            "id      = { path = \".page\" }",
+            "id      = { path = \".page\" }\nshow_url = { path = \".page\", prefix = \"https://subsplease.org/shows/\", suffix = \"/\" }",
+        );
+        let compiled = SourcePlugin::parse(&toml, Path::new("t.toml")).unwrap();
+        let item = serde_json::json!({"page": "hanaori-san-wa-tensei-shitemo-kenka-ga-shitai"});
+        assert_eq!(
+            compiled.fields.show_url.extract(&item),
+            Some(
+                "https://subsplease.org/shows/hanaori-san-wa-tensei-shitemo-kenka-ga-shitai/"
+                    .to_string()
+            )
         );
     }
 

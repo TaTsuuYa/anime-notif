@@ -60,6 +60,14 @@ fn extracts_captured_subsplease_response() {
                 "cover url should be absolutized, got {cover:?}"
             );
         }
+        let show_url = release
+            .show_url
+            .as_ref()
+            .expect("every entry in the fixture has a page slug, so show_url should be set");
+        assert!(
+            show_url.starts_with("https://subsplease.org/shows/") && show_url.ends_with('/'),
+            "show url should be built from the page slug, got {show_url:?}"
+        );
     }
 }
 

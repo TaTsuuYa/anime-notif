@@ -23,6 +23,17 @@ use std::path::{Path, PathBuf};
 
 use anime_notif_core::DownloadMethod;
 
+/// Opens `url` via `command_override` (a template like `"firefox {url}"`,
+/// tokenized the same safe way as download hand-off commands — see the
+/// module docs), or the platform default opener when unset. Used for a
+/// notification's click-to-open-show-page action; deliberately independent
+/// of `downloads.methods.magnet.command`, since a user who points that at
+/// a torrent client would not want show-page clicks routed there too.
+pub fn open_url(url: &str, command_override: Option<&str>) -> Result<(), DownloadError> {
+    let tokens = command::resolve_command_tokens(command_override)?;
+    command::spawn(&command::substitute(&tokens, url))
+}
+
 /// A fully resolved request to download one release variant.
 #[derive(Debug, Clone)]
 pub struct DownloadRequest {
@@ -217,6 +228,31 @@ mod tests {
 
         downloader.download(&request).await.unwrap();
         // The command was spawned fire-and-forget; give it a moment.
+        for _ in 0..50 {
+            if marker.exists() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        assert!(
+            marker.exists(),
+            "expected {} to be created",
+            marker.display()
+        );
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn open_url_uses_configured_command_override() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("opened");
+
+        open_url(
+            "https://subsplease.org/shows/example/",
+            Some(&format!("touch {}", marker.display())),
+        )
+        .unwrap();
+
         for _ in 0..50 {
             if marker.exists() {
                 break;

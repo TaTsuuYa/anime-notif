@@ -44,7 +44,7 @@ auth_token = "${TURSO_TOKEN}"
 |---|---|---|---|
 | `base_dir` | path | `~/Downloads/anime-notif` | Base directory when no override applies: `<base_dir>/<source>/<method>`. |
 | `default_method` | `direct`\|`torrent`\|`magnet` | `direct` | Favourite method for liked/auto-downloaded shows. |
-| `default_resolution` | string | `1080` | Desired resolution. Releases below it trigger the resolution-wait workflow (see [downloads.md](downloads.md) once written). By convention resolution labels are bare digit strings — see below. |
+| `default_resolution` | string | `1080` | Desired resolution. Releases below it trigger the resolution-wait workflow (see `docs/downloads.md`). By convention resolution labels are bare digit strings — see below. |
 | `resolution_fallback` | list of strings | `["1080","720","480"]` | Preference order used once `resolution_wait` elapses without the desired resolution appearing. |
 
 **Resolution label convention:** sources vary in whether they report `"1080p"` or `"1080"` (subsplease's API, for example, uses bare digits). Plugins normalize this with a `(\d+)` regex on the raw value (see `docs/sources.md`), so `default_resolution`/`resolution_fallback` here should be specified as bare digits too.
@@ -79,6 +79,24 @@ command = "transmission-remote --add {magnet}"
 For `torrent`, a configured `watch_dir` takes precedence over `dir` at the
 same specificity level, since a watch-folder is the more specific intent.
 
+## `[notifications]`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `open_show_page` | bool | `true` | Whether clicking a notification (its body — not the Download/Whitelist/Blacklist buttons) opens the show's page in a browser. Only has an effect for a release whose source provides `fields.show_url` (`docs/sources.md`); does nothing otherwise. |
+| `open_command` | string, optional | unset (platform default) | Command used to open the show page, e.g. `"firefox {url}"`. Unset uses the platform default opener (`xdg-open`/`open`/`cmd /C start`) — kept independent of `downloads.methods.magnet.command` so pointing that at a torrent client doesn't also send show-page clicks there. |
+
+```toml
+[notifications]
+open_show_page = true
+# open_command = "firefox {url}"
+```
+
+See `docs/notifications.md` for how clicks reach the daemon, and why
+disabling this only stops *us* from wiring up a click handler rather than
+guaranteeing anything about how your notification daemon behaves when you
+click a notification with no handler registered.
+
 ## `[[categories]]`
 
 Categories are data with behavior flags, not hardcoded names — `notify`
@@ -108,9 +126,9 @@ unambiguous prefix.
 
 ## `[[rules]]`
 
-Declarative rules seed or override a show's category by matching its title,
-evaluated when a show is first seen (or re-evaluated — exact semantics land
-with the daemon in a later milestone):
+Declarative rules seed a show's category the first time it's seen (matched
+in order, first match wins; no match falls back to a category literally
+named `normal`, else the first defined category):
 
 ```toml
 [[rules]]
@@ -128,8 +146,8 @@ name a category defined in `[[categories]]`.
 ## `sources`
 
 A list of source plugin locations — local paths, URLs to shared plugin files,
-or (in Nix) store paths from another flake. See `docs/sources.md` (added once
-the source engine lands) for the plugin file format itself.
+or (in Nix) store paths from another flake. See `docs/sources.md` for the
+plugin file format itself.
 
 ```toml
 sources = [

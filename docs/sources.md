@@ -23,10 +23,11 @@ items = ".[]"
 variants = ".downloads[]"
 
 [fields]
-series  = { path = ".show" }
-episode = { path = ".episode", default = "?" }
-cover   = { path = ".image_url", prefix = "https://subsplease.org" }
-id      = { path = ".page" }
+series   = { path = ".show" }
+episode  = { path = ".episode", default = "?" }
+cover    = { path = ".image_url", prefix = "https://subsplease.org" }
+show_url = { path = ".page", prefix = "https://subsplease.org/shows/", suffix = "/" }
+id       = { path = ".page" }
 
 [fields.variant]
 resolution = { path = ".res", regex = "(\\d+)", default = "480" }
@@ -101,8 +102,10 @@ subset covers every source shape encountered so far.
 ## Field extraction rules
 
 Every field — `fields.series`, `fields.episode`, `fields.season`,
-`fields.cover`, `fields.id`, and `fields.variant.{resolution,method,link}` —
-is a `{ path?, regex?, default?, prefix? }` table, resolved in this order:
+`fields.cover`, `fields.show_url`, `fields.id`, and
+`fields.variant.{resolution,method,link}` — is a
+`{ path?, regex?, default?, prefix?, suffix? }` table, resolved in this
+order:
 
 1. **`path`** (optional) — jq path, relative to the item (for series-level
    fields) or the variant (for `fields.variant.*`). Omit `path` entirely for
@@ -114,16 +117,20 @@ is a `{ path?, regex?, default?, prefix? }` table, resolved in this order:
    `default`).
 3. **`default`** (optional) — used when `path` is unset, finds nothing, or
    (after `regex`) doesn't match.
-4. **`prefix`** (optional) — prepended to the final string value, e.g. to
-   turn a relative image/link path into an absolute URL
+4. **`prefix`**/**`suffix`** (optional) — prepended/appended to the final
+   string value, e.g. to turn a relative image path into an absolute URL
    (`prefix = "https://subsplease.org"` turns `/img/x.jpg` into
-   `https://subsplease.org/img/x.jpg`).
+   `https://subsplease.org/img/x.jpg`), or to build a page URL from a bare
+   slug (`prefix = "https://subsplease.org/shows/"`, `suffix = "/"` turns
+   `hanaori-...` into `https://subsplease.org/shows/hanaori-.../`).
 
 `series`, `resolution`, `method`, and `link` are **required**: an item or
 variant missing one (after the above resolution) is skipped and reported as
 a warning (surfaced by `source test`) rather than aborting the whole poll.
-`episode`, `season`, `cover`, and `id` are optional — give `episode` a
-`default` if the API sometimes omits it (used as-is, e.g. `"?"`).
+`episode`, `season`, `cover`, `show_url`, and `id` are optional — give
+`episode` a `default` if the API sometimes omits it (used as-is, e.g.
+`"?"`). `show_url` is used as a notification's click-to-open-show-page
+target — see `docs/notifications.md`.
 
 `method`'s final value must resolve to `direct`, `torrent`, or `magnet` (a
 few synonyms like `http`/`url`/`torrent_file` are also accepted); anything

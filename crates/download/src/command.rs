@@ -11,6 +11,7 @@ use crate::error::DownloadError;
 
 const PLACEHOLDER_MAGNET: &str = "{magnet}";
 const PLACEHOLDER_LINK: &str = "{link}";
+const PLACEHOLDER_URL: &str = "{url}";
 
 /// The default hand-off command for this platform, as already-split
 /// tokens, used when no `command` override is configured.
@@ -53,14 +54,17 @@ pub fn resolve_command_tokens(configured: Option<&str>) -> Result<Vec<String>, D
     }
 }
 
-/// Substitutes `{magnet}`/`{link}` tokens (matched whole, not as a
-/// substring) with `link`. Pure and side-effect-free so it's directly
-/// testable without spawning a process.
+/// Substitutes `{magnet}`/`{link}`/`{url}` tokens (matched whole, not as a
+/// substring) with `link`. All three names are accepted so a config reads
+/// naturally regardless of context (`{magnet}` for magnet hand-off,
+/// `{url}` for opening a show page); which one appears in the platform
+/// default depends on the call site. Pure and side-effect-free so it's
+/// directly testable without spawning a process.
 pub fn substitute(tokens: &[String], link: &str) -> Vec<String> {
     tokens
         .iter()
         .map(|t| {
-            if t == PLACEHOLDER_MAGNET || t == PLACEHOLDER_LINK {
+            if t == PLACEHOLDER_MAGNET || t == PLACEHOLDER_LINK || t == PLACEHOLDER_URL {
                 link.to_string()
             } else {
                 t.clone()
@@ -110,6 +114,16 @@ mod tests {
         let tokens = vec!["echo".to_string(), "prefix-{magnet}-suffix".to_string()];
         let resolved = substitute(&tokens, "magnet:?xt=aaa");
         assert_eq!(resolved, vec!["echo", "prefix-{magnet}-suffix"]);
+    }
+
+    #[test]
+    fn url_placeholder_is_also_substituted() {
+        let tokens = vec!["firefox".to_string(), "{url}".to_string()];
+        let resolved = substitute(&tokens, "https://subsplease.org/shows/example/");
+        assert_eq!(
+            resolved,
+            vec!["firefox", "https://subsplease.org/shows/example/"]
+        );
     }
 
     #[test]
