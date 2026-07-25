@@ -71,19 +71,28 @@ the same commit as the code change.
      `default = "magnet"` (a constant field).
    - `link` — the URL or magnet URI.
 
-6. **Write the file** to `sources/<id>.toml` (matching
+6. **Check for batch releases.** Scan the sample data for any entry whose
+   episode value is a *range* (e.g. `"01-22"`) rather than a single number,
+   or a title/filename containing "Batch" — sources sometimes bundle a
+   whole cour into one release once it's finished airing. If you find one,
+   add a `[batch]` table (see `reference/plugin-schema.md`) so it's skipped
+   by default rather than notifying like a normal episode. If you don't see
+   any, skip this — most sources never need it.
+
+7. **Write the file** to `sources/<id>.toml` (matching
    `reference/plugin-schema.md`'s field ordering — top-level keys like
    `items`/`variants` *before* the `[fields]` table).
 
-7. **Validate it.** If the user has anime-notif installed:
+8. **Validate it.** If the user has anime-notif installed:
    `anime-notif source test sources/<id>.toml` fetches the live endpoint
    and prints every normalized release plus any extraction warnings — fix
-   the plugin until warnings are gone and the output looks right. If they
-   don't have it installed, at minimum re-check every path by hand against
-   the sample JSON, and mention they should run `source test` once they
-   do.
+   the plugin until warnings are gone and the output looks right (if you
+   added a `[batch]` table, confirm the batch entries are actually the ones
+   being skipped, not something else). If they don't have it installed, at
+   minimum re-check every path by hand against the sample JSON, and mention
+   they should run `source test` once they do.
 
-8. **Tell the user how to use it**: add the path (or, once published, a
+9. **Tell the user how to use it**: add the path (or, once published, a
    URL to it) to their `config.toml`'s `sources` list — see
    `reference/plugin-schema.md`'s bottom section — or, on NixOS/home-manager,
    `services.anime-notif.settings.sources`.
@@ -92,5 +101,6 @@ the same commit as the code change.
 
 `examples/subsplease.toml` is a complete, real, working plugin (SubsPlease's
 `?f=latest` API) — use it as a concrete reference for the shape of a
-finished file, including the constant-field (`method`) and
-relative-URL-with-`prefix` (`cover`) patterns.
+finished file, including the constant-field (`method`),
+relative-URL-with-`prefix` (`cover`), and batch-detection (`[batch]`,
+matching SubsPlease's real `"01-22"`-style episode ranges) patterns.

@@ -30,3 +30,12 @@ id      = { path = ".page" }
 resolution = { path = ".res", regex = "(\\d+)", default = "480" }
 method     = { default = "magnet" }
 link       = { path = ".magnet" }
+
+# SubsPlease occasionally posts a "batch" release bundling a whole cour
+# into one download once it's finished airing, e.g. episode "01-22"
+# instead of a single episode number — signalled only by `episode` being a
+# range, there's no dedicated flag in the API. Skipped by default
+# (ignore's own default); set `ignore = false` here to get notified about
+# batches too.
+[batch]
+regex = "^\\d+\\s*-\\s*\\d+$"

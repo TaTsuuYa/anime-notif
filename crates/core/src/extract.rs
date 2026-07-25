@@ -32,6 +32,16 @@ pub fn extract(source: &CompiledSource, root: &Value) -> ExtractionResult {
             continue;
         };
         let episode = source.fields.episode.extract(item).unwrap_or_default();
+
+        if let Some(batch) = &source.batch {
+            if batch.ignore && batch.matches(item, &episode) {
+                result.warnings.push(format!(
+                    "item {i} ({series_title:?}, episode {episode:?}): skipped batch release"
+                ));
+                continue;
+            }
+        }
+
         let season = source.fields.season.extract(item);
         let cover_url = source.fields.cover.extract(item);
         let raw_id = source.fields.id.extract(item);
@@ -181,6 +191,87 @@ link       = { path = ".magnet" }
         let root = serde_json::json!({"x": {"show": "Empty Show", "downloads": []}});
         let result = extract(&source, &root);
         assert_eq!(result.releases.len(), 0);
+        assert!(result.warnings.is_empty());
+    }
+
+    const SUBSPLEASE_TOML_WITH_BATCH: &str = r#"
+id = "subsplease"
+endpoint = "https://subsplease.org/api/"
+method = "GET"
+
+items = ".[]"
+variants = ".downloads[]"
+
+[fields]
+series  = { path = ".show" }
+episode = { path = ".episode", default = "?" }
+
+[fields.variant]
+resolution = { path = ".res", regex = "(\\d+)", default = "480" }
+method     = { default = "magnet" }
+link       = { path = ".magnet" }
+
+[batch]
+regex = "^\\d+\\s*-\\s*\\d+$"
+"#;
+
+    fn batch_sample() -> Value {
+        // Shaped after a real SubsPlease response: a normal episode
+        // alongside a batch release (episode = "01-22").
+        serde_json::json!({
+            "dr-stone-1": {
+                "show": "Dr. Stone S3",
+                "episode": "22",
+                "downloads": [{"res": "1080p", "magnet": "magnet:?xt=urn:btih:single"}]
+            },
+            "dr-stone-batch": {
+                "show": "Dr. Stone S3",
+                "episode": "01-22",
+                "downloads": [{"res": "1080p", "magnet": "magnet:?xt=urn:btih:batch"}]
+            }
+        })
+    }
+
+    #[test]
+    fn batch_release_is_skipped_by_default() {
+        let source = SourcePlugin::parse(SUBSPLEASE_TOML_WITH_BATCH, Path::new("t.toml")).unwrap();
+        let result = extract(&source, &batch_sample());
+
+        assert_eq!(result.releases.len(), 1);
+        assert_eq!(result.releases[0].episode, "22");
+        assert_eq!(result.warnings.len(), 1);
+        assert!(result.warnings[0].contains("skipped batch release"));
+        assert!(result.warnings[0].contains("01-22"));
+    }
+
+    #[test]
+    fn batch_release_is_included_when_ignore_is_false() {
+        let toml = SUBSPLEASE_TOML_WITH_BATCH.replace(
+            "regex = \"^\\\\d+\\\\s*-\\\\s*\\\\d+$\"",
+            "regex = \"^\\\\d+\\\\s*-\\\\s*\\\\d+$\"\nignore = false",
+        );
+        let source = SourcePlugin::parse(&toml, Path::new("t.toml")).unwrap();
+        let result = extract(&source, &batch_sample());
+
+        assert_eq!(result.releases.len(), 2);
+        assert!(result.warnings.is_empty());
+        assert!(result.releases.iter().any(|r| r.episode == "01-22"));
+    }
+
+    #[test]
+    fn no_batch_config_never_filters_anything() {
+        // SUBSPLEASE_TOML (no [batch] table) applied to data containing a
+        // range-like episode: nothing should be filtered.
+        let source = SourcePlugin::parse(SUBSPLEASE_TOML, Path::new("t.toml")).unwrap();
+        let root = serde_json::json!({
+            "x": {
+                "show": "Dr. Stone S3",
+                "episode": "01-22",
+                "downloads": [{"res": "1080p", "magnet": "magnet:?xt=urn:btih:batch"}]
+            }
+        });
+        let result = extract(&source, &root);
+        assert_eq!(result.releases.len(), 1);
         assert!(result.warnings.is_empty());
     }
 }

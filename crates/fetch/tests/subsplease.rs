@@ -23,10 +23,19 @@ fn extracts_captured_subsplease_response() {
     let root = fixture_json();
     let result = extract(&source, &root);
 
-    assert!(
-        result.warnings.is_empty(),
-        "unexpected extraction warnings: {:?}",
+    // The captured fixture contains one real batch release (Dr. Stone S3,
+    // episode "01-22") among 20 entries; the shipped plugin's [batch]
+    // config skips it by default, which shows up as exactly one warning.
+    assert_eq!(
+        result.warnings.len(),
+        1,
+        "expected exactly the one known batch-skip warning, got: {:?}",
         result.warnings
+    );
+    assert!(result.warnings[0].contains("skipped batch release"));
+    assert!(
+        !result.releases.iter().any(|r| r.episode == "01-22"),
+        "the batch release should have been filtered out"
     );
     assert!(!result.releases.is_empty(), "expected at least one release");
 

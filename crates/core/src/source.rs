@@ -49,6 +49,10 @@ fn default_variants_path() -> String {
     ".".to_string()
 }
 
+fn default_true() -> bool {
+    true
+}
+
 /// One field extraction rule: a jq path, an optional regex applied to the
 /// path's result (first capture group, or the whole match if the pattern
 /// has none), an optional default when the value is missing/unmatched, and
@@ -119,6 +123,31 @@ pub struct FieldSet {
     pub variant: VariantFields,
 }
 
+/// Describes how to recognize a "batch" release for this source — one
+/// release bundling multiple episodes together (e.g. SubsPlease reports
+/// these with an `episode` value like `"01-22"` instead of a single
+/// number) — and whether to skip them.
+///
+/// Optional: a plugin with no `[batch]` table never flags anything as a
+/// batch, so existing plugins are unaffected.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BatchConfig {
+    /// jq path, relative to the item, to match `regex` against. Defaults
+    /// to the already-extracted `episode` field's value when unset — the
+    /// common case, since a batch is usually signalled by the episode
+    /// field itself being a range.
+    #[serde(default)]
+    pub path: Option<String>,
+    /// If this regex matches the target value, the item is a batch. Only
+    /// whether it matches is used — capture groups, if any, are ignored.
+    pub regex: String,
+    /// Whether to skip batch releases entirely (not extracted into any
+    /// `Release` at all). Defaults to `true`.
+    #[serde(default = "default_true")]
+    pub ignore: bool,
+}
+
 /// A source plugin, as loaded from TOML: the endpoint to poll, how to
 /// authenticate, and where to find each field in the response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -159,6 +188,10 @@ pub struct SourcePlugin {
     pub variants: String,
     /// Field extraction rules.
     pub fields: FieldSet,
+    /// How to recognize (and whether to skip) batch releases. Omit to
+    /// never flag anything as a batch.
+    #[serde(default)]
+    pub batch: Option<BatchConfig>,
 }
 
 impl SourcePlugin {
@@ -208,6 +241,23 @@ impl SourcePlugin {
                 link: compile_extractor("fields.variant.link", &self.fields.variant.link)?,
             },
         };
+        let batch = self
+            .batch
+            .as_ref()
+            .map(|b| {
+                Ok::<_, SourceError>(CompiledBatch {
+                    path: b
+                        .path
+                        .as_deref()
+                        .map(|p| parse_path("batch.path", p))
+                        .transpose()?,
+                    regex: Regex::new(&b.regex)
+                        .map_err(|e| SourceError::Invalid(format!("batch.regex: {e}")))?,
+                    ignore: b.ignore,
+                })
+            })
+            .transpose()?;
+
         Ok(CompiledSource {
             id: self.id.clone(),
             endpoint: self.endpoint.clone(),
@@ -220,6 +270,7 @@ impl SourcePlugin {
             items,
             variants,
             fields,
+            batch,
         })
     }
 }
@@ -284,12 +335,34 @@ impl CompiledExtractor {
     }
 }
 
-fn value_to_string(value: &Value) -> Option<String> {
+pub(crate) fn value_to_string(value: &Value) -> Option<String> {
     match value {
         Value::String(s) => Some(s.clone()),
         Value::Number(n) => Some(n.to_string()),
         Value::Bool(b) => Some(b.to_string()),
         Value::Null | Value::Array(_) | Value::Object(_) => None,
+    }
+}
+
+/// A compiled [`BatchConfig`].
+#[derive(Debug, Clone)]
+pub struct CompiledBatch {
+    path: Option<JqPath>,
+    regex: Regex,
+    /// Whether to skip items this detects as a batch.
+    pub ignore: bool,
+}
+
+impl CompiledBatch {
+    /// Whether `item` is a batch release: evaluates `path` against `item`
+    /// (falling back to `episode`, the already-extracted episode value,
+    /// when `path` is unset) and checks whether `regex` matches it.
+    pub fn matches(&self, item: &Value, episode: &str) -> bool {
+        let target = match &self.path {
+            Some(path) => path.eval_first(item).and_then(value_to_string),
+            None => Some(episode.to_string()),
+        };
+        target.is_some_and(|t| self.regex.is_match(&t))
     }
 }
 
@@ -349,6 +422,8 @@ pub struct CompiledSource {
     pub variants: JqPath,
     /// Field extractors.
     pub fields: CompiledFieldSet,
+    /// Batch-release detection, if configured.
+    pub batch: Option<CompiledBatch>,
 }
 
 #[cfg(test)]
@@ -438,5 +513,50 @@ link       = { path = ".magnet" }
             compiled.fields.variant.resolution.extract(&variant),
             Some("480".to_string())
         );
+    }
+
+    #[test]
+    fn no_batch_table_means_batch_is_never_configured() {
+        let compiled = SourcePlugin::parse(SUBSPLEASE_TOML, Path::new("t.toml")).unwrap();
+        assert!(compiled.batch.is_none());
+    }
+
+    #[test]
+    fn batch_defaults_to_ignore_true() {
+        let toml = format!("{SUBSPLEASE_TOML}\n[batch]\nregex = \"^\\\\d+\\\\s*-\\\\s*\\\\d+$\"\n");
+        let compiled = SourcePlugin::parse(&toml, Path::new("t.toml")).unwrap();
+        let batch = compiled.batch.as_ref().unwrap();
+        assert!(batch.ignore);
+    }
+
+    #[test]
+    fn batch_matches_episode_range_by_default() {
+        let toml = format!("{SUBSPLEASE_TOML}\n[batch]\nregex = \"^\\\\d+\\\\s*-\\\\s*\\\\d+$\"\n");
+        let compiled = SourcePlugin::parse(&toml, Path::new("t.toml")).unwrap();
+        let batch = compiled.batch.as_ref().unwrap();
+        let item = serde_json::json!({});
+        assert!(batch.matches(&item, "01-22"));
+        assert!(!batch.matches(&item, "22"));
+    }
+
+    #[test]
+    fn batch_can_match_a_different_field_via_path() {
+        let toml =
+            format!("{SUBSPLEASE_TOML}\n[batch]\npath = \".title\"\nregex = \"(?i)batch\"\n");
+        let compiled = SourcePlugin::parse(&toml, Path::new("t.toml")).unwrap();
+        let batch = compiled.batch.as_ref().unwrap();
+        let item = serde_json::json!({"title": "[SubsPlease] Dr. Stone S3 (01-22) [Batch]"});
+        assert!(batch.matches(&item, "irrelevant"));
+        let non_batch_item = serde_json::json!({"title": "[SubsPlease] Dr. Stone S3 - 15"});
+        assert!(!batch.matches(&non_batch_item, "irrelevant"));
+    }
+
+    #[test]
+    fn batch_ignore_can_be_disabled() {
+        let toml = format!(
+            "{SUBSPLEASE_TOML}\n[batch]\nregex = \"^\\\\d+\\\\s*-\\\\s*\\\\d+$\"\nignore = false\n"
+        );
+        let compiled = SourcePlugin::parse(&toml, Path::new("t.toml")).unwrap();
+        assert!(!compiled.batch.unwrap().ignore);
     }
 }

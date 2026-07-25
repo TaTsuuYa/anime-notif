@@ -115,3 +115,16 @@ follows [Keep a Changelog](https://keepachangelog.com/).
   explaining it and pointing at the **home-manager** module (a
   `systemd --user` service, which does have the session bus) as the path
   that actually delivers notifications.
+
+### Added
+- Source plugins can now declare an optional `[batch]` table describing
+  how to recognize a **batch release** (one release bundling multiple
+  episodes, e.g. SubsPlease's `episode = "01-22"` — confirmed against a
+  real batch item in the captured fixture) via a jq path + regex, and
+  whether to skip them (`ignore`, defaulting to `true`). Skipped batches
+  are excluded from extraction entirely and reported as an extraction
+  warning rather than silently dropped. Omitting `[batch]` (existing
+  plugins) never flags anything as a batch. `sources/subsplease.toml` now
+  uses this for its real, previously-unhandled `Dr. Stone S3 (01-22)`
+  batch entry; `docs/sources.md` and `skills/create-source-plugin/`'s
+  schema reference document the feature.

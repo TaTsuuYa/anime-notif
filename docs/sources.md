@@ -32,6 +32,9 @@ id      = { path = ".page" }
 resolution = { path = ".res", regex = "(\\d+)", default = "480" }
 method     = { default = "magnet" }
 link       = { path = ".magnet" }
+
+[batch]
+regex = "^\\d+\\s*-\\s*\\d+$"
 ```
 
 Run `anime-notif source test sources/subsplease.toml` to fetch the live
@@ -53,6 +56,7 @@ a plugin (see `docs/cli.md`).
 | `items` | yes | jq-style path to the release array in the response (see below). |
 | `variants` | no (`"."`) | jq-style path, relative to each item, to its download variants. Leave unset when an item *is* a single variant (one resolution/method/link per item). |
 | `fields` | yes | Field extraction rules — see below. |
+| `batch` | no | Batch-release detection — see below. Omit entirely if the source never bundles multiple episodes into one release. |
 
 Unknown keys anywhere in the file are a hard error (not silently ignored) —
 this catches the single most common authoring mistake: **a bare `key = value`
@@ -132,6 +136,43 @@ convention, plugins normalize to **bare digit strings** with a `(\d+)`
 regex on the raw value (as the SubsPlease example does), and
 `config.toml`'s `downloads.default_resolution`/`resolution_fallback`
 (`docs/config.md`) are specified the same way.
+
+## Batch releases
+
+Some sources occasionally post a **batch**: one release bundling several
+episodes together (commonly once a season has finished airing), instead of
+one release per episode. SubsPlease signals this by making `episode` a
+range like `"01-22"` rather than a single number — there's no dedicated
+flag in its API, which is typical.
+
+The optional `[batch]` table describes how to recognize these for a given
+source, and whether to skip them (skipped is the default — a batch
+re-announcing episodes you were likely already notified about individually
+is usually noise, not news):
+
+```toml
+[batch]
+regex = "^\\d+\\s*-\\s*\\d+$"   # matches episode values like "01-22"
+# path = ".title"                # optional: match a different field instead
+                                  # of the already-extracted `episode` value
+# ignore = false                 # default true (skip); set false to get
+                                  # batches notified/downloaded like anything else
+```
+
+- **`regex`** (required) — only whether it *matches* is used; capture
+  groups, if any, are ignored.
+- **`path`** (optional) — jq path, relative to the item, to match `regex`
+  against instead of `episode`. Use this if a source signals batches some
+  other way (e.g. the word "Batch" appearing in a title field) rather than
+  through the episode value itself.
+- **`ignore`** (optional, default `true`) — `true` skips matching items
+  entirely (not extracted into any release, and not even considered for
+  variants); `false` includes them, treated exactly like any other
+  release.
+
+Omitting `[batch]` entirely (the default for a new plugin) means nothing is
+ever flagged as a batch — existing plugins are unaffected by this feature
+until they opt in.
 
 ## Remote and Nix-provided sources
 

@@ -20,6 +20,7 @@ sync if you're updating the schema.
 | `items` | yes | jq-style path to the release array in the response. |
 | `variants` | no (`"."`) | jq-style path, *relative to each item*, to its download variants. Omit when an item has exactly one resolution/method/link. |
 | `fields` | yes | Field extraction rules — see below. |
+| `batch` | no | Batch-release detection — see below. Omit if the source never bundles multiple episodes into one release. |
 
 ### ⚠️ Field ordering matters (a real TOML gotcha)
 
@@ -99,6 +100,25 @@ Sources disagree on `"1080p"` vs `"1080"`. Normalize to **bare digits**
 with `regex = "(\\d+)"` on the resolution field — this matches the
 convention `config.toml`'s `downloads.default_resolution`/
 `resolution_fallback` are specified in.
+
+## Batch releases
+
+Some sources occasionally bundle several episodes into one release (e.g.
+once a season finishes airing) instead of one release per episode. If the
+sample data has anything like this — look for an episode value that's a
+*range* (`"01-22"`) rather than a single number, or a title containing the
+word "Batch" — add:
+
+```toml
+[batch]
+regex = "^\\d+\\s*-\\s*\\d+$"   # matches against the extracted `episode` value by default
+# path = ".title"                # set this instead to match a different field
+# ignore = false                 # default true (skip batches); false includes them normally
+```
+
+Only whether `regex` *matches* matters (capture groups are ignored). If you
+don't see any batch-shaped entries in the sample data, skip this table
+entirely — it's optional, and most sources never need it.
 
 ## Using the finished plugin
 
