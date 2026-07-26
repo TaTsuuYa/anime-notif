@@ -14,6 +14,10 @@ endpoint = "https://subsplease.org/api/"
 method = "GET"
 interval = "10m"
 query = { f = "latest", tz = "Africa/Casablanca" }
+# The small app/source badge shown on every notification from this source
+# (distinct from `fields.cover`'s per-show cover art, which is the big
+# content image) — see docs/notifications.md.
+icon = "https://subsplease.org/favicon.ico"
 
 items = ".[]"
 variants = ".downloads[]"

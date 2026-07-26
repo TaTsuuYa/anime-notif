@@ -34,16 +34,44 @@ pub struct NotificationAction {
     pub url: String,
 }
 
+/// A sound to play alongside a notification: either a specific audio file,
+/// or a name from the freedesktop sound theme spec (e.g.
+/// `"message-new-instant"`). `File` is what you want for "a custom sound
+/// per source"; `Name` is for reusing a sound your desktop theme already
+/// ships.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Sound {
+    /// Path to a specific sound file (`.oga`/`.ogg`/`.wav`, ...).
+    File(PathBuf),
+    /// A freedesktop sound-theme name.
+    Name(String),
+}
+
 /// A notification to show the user.
+///
+/// Two different images can appear on a notification, and it's easy to
+/// mix them up: `icon_path` is the small **app/source badge** (like a
+/// program's taskbar icon — identifies *who* is notifying you, shown as a
+/// small overlay in a corner by most notification daemons); `image_path`
+/// is the big **content image** shown in the body (here, the show's cover
+/// art). Setting only `icon_path` (as earlier versions did) makes the
+/// badge-sized icon get blown up into the main image slot instead, which
+/// is why cover art used to appear where the app icon should be.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Notification {
     /// Notification title (typically the series name).
     pub title: String,
     /// Notification body (typically episode/resolution/method details).
     pub body: String,
-    /// Path to a locally cached icon (cover art, or the bundled app icon
-    /// fallback), if any.
+    /// Small app/source badge icon (locally cached source icon, or the
+    /// bundled default app icon), if any.
     pub icon_path: Option<PathBuf>,
+    /// Big content image shown in the notification body (locally cached
+    /// cover art), if any. Left unset rather than falling back to
+    /// anything — a notification with no cover just doesn't show one.
+    pub image_path: Option<PathBuf>,
+    /// Sound to play when the notification is shown, if any.
+    pub sound: Option<Sound>,
     /// Available actions, if any.
     pub actions: Vec<NotificationAction>,
 }
@@ -105,6 +133,8 @@ mod tests {
             title: "One Piece".into(),
             body: "Episode 1121 [1080p]".into(),
             icon_path: None,
+            image_path: None,
+            sound: None,
             actions: vec![NotificationAction {
                 id: "download".into(),
                 label: "Download".into(),

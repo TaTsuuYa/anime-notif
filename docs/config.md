@@ -85,17 +85,31 @@ same specificity level, since a watch-folder is the more specific intent.
 |---|---|---|---|
 | `open_show_page` | bool | `true` | Whether clicking a notification (its body — not the Download/Whitelist/Blacklist buttons) opens the show's page in a browser. Only has an effect for a release whose source provides `fields.show_url` (`docs/sources.md`); does nothing otherwise. |
 | `open_command` | string, optional | unset (platform default) | Command used to open the show page, e.g. `"firefox {url}"`. Unset uses the platform default opener (`xdg-open`/`open`/`cmd /C start`) — kept independent of `downloads.methods.magnet.command` so pointing that at a torrent client doesn't also send show-page clicks there. |
+| `sound_file` | path, optional | unset | Default notification sound: a specific audio file (`.oga`/`.ogg`/`.wav`, ...). Wins over `sound_name` if both are set. |
+| `sound_name` | string, optional | unset | Default notification sound: a freedesktop sound-theme name (e.g. `"message-new-instant"`), used when `sound_file` is unset. |
+| `sources` | table, optional | empty | Per-source sound overrides — see below. |
 
 ```toml
 [notifications]
 open_show_page = true
 # open_command = "firefox {url}"
+sound_file = "/usr/share/sounds/freedesktop/stereo/message-new-instant.oga"
+
+# Overrides the default above for this one source only. Setting either
+# field here uses this table exclusively for that source — it does not
+# merge with the global sound_file/sound_name above.
+[notifications.sources.subsplease]
+sound_file = "/home/you/sounds/subsplease-ding.oga"
 ```
 
-See `docs/notifications.md` for how clicks reach the daemon, and why
-disabling this only stops *us* from wiring up a click handler rather than
-guaranteeing anything about how your notification daemon behaves when you
-click a notification with no handler registered.
+Leave `sound_file`/`sound_name` unset (globally and per source) to just
+get your notification daemon's own default sound behavior. See
+`docs/notifications.md` for the full anatomy of a notification (which
+image goes where, confirmation-notification behavior, etc.) and how clicks
+reach the daemon — disabling `open_show_page` only stops *us* from wiring
+up a click handler, it doesn't guarantee anything about how your
+notification daemon behaves when you click a notification with no handler
+registered.
 
 ## `[[categories]]`
 

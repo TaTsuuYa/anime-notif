@@ -43,7 +43,14 @@ the same commit as the code change.
      → still `items = ".[]"` (iterating an object's values is supported).
    - A nested array, e.g. `{"data": {"releases": [...]}}` → `items = ".data.releases[]"`.
 
-3. **Map the required series-level fields**, each as a jq path *relative to
+3. **Set the source's icon**, if you can find one (e.g. the site's
+   `/favicon.ico`) — a fixed URL, not a jq path, set once at the top level:
+   `icon = "https://example.com/favicon.ico"`. This is the small app/source
+   badge shown on every notification from this source (distinct from
+   `fields.cover` below, which is the big per-show content image). Optional
+   — skip it if there's no obvious icon.
+
+4. **Map the required series-level fields**, each as a jq path *relative to
    one item*:
    - `fields.series` (required) — the show's title.
    - `fields.episode` — give it `default = "?"` if the API can omit it.
@@ -57,7 +64,7 @@ the same commit as the code change.
      `{ path = ".slug", prefix = "https://example.com/shows/", suffix = "/" }`.
      This becomes the notification's click-to-open-show-page target.
 
-4. **Find the download variants.** Does one item carry one
+5. **Find the download variants.** Does one item carry one
    resolution/method/link, or several (e.g. a `downloads`/`files`/`links`
    array with one entry per quality)?
    - Several, nested under a key → `variants = "<key>[]"` (a path
@@ -65,7 +72,7 @@ the same commit as the code change.
    - Just one per item → omit `variants` (it defaults to `"."`, meaning
      "the item itself is the one variant").
 
-5. **Map the variant fields** under `[fields.variant]`:
+6. **Map the variant fields** under `[fields.variant]`:
    - `resolution` — often needs `regex = "(\\d+)"` to normalize `"1080p"`
      or `"1080"` down to bare digits (anime-notif's convention — see the
      reference doc). Give it a sane `default` (e.g. `"480"`) in case a
@@ -76,7 +83,7 @@ the same commit as the code change.
      `default = "magnet"` (a constant field).
    - `link` — the URL or magnet URI.
 
-6. **Check for batch releases.** Scan the sample data for any entry whose
+7. **Check for batch releases.** Scan the sample data for any entry whose
    episode value is a *range* (e.g. `"01-22"`) rather than a single number,
    or a title/filename containing "Batch" — sources sometimes bundle a
    whole cour into one release once it's finished airing. If you find one,
@@ -84,11 +91,11 @@ the same commit as the code change.
    by default rather than notifying like a normal episode. If you don't see
    any, skip this — most sources never need it.
 
-7. **Write the file** to `sources/<id>.toml` (matching
+8. **Write the file** to `sources/<id>.toml` (matching
    `reference/plugin-schema.md`'s field ordering — top-level keys like
    `items`/`variants` *before* the `[fields]` table).
 
-8. **Validate it.** If the user has anime-notif installed:
+9. **Validate it.** If the user has anime-notif installed:
    `anime-notif source test sources/<id>.toml` fetches the live endpoint
    and prints every normalized release plus any extraction warnings — fix
    the plugin until warnings are gone and the output looks right (if you
@@ -97,7 +104,7 @@ the same commit as the code change.
    minimum re-check every path by hand against the sample JSON, and mention
    they should run `source test` once they do.
 
-9. **Tell the user how to use it**: add the path (or, once published, a
+10. **Tell the user how to use it**: add the path (or, once published, a
    URL to it) to their `config.toml`'s `sources` list — see
    `reference/plugin-schema.md`'s bottom section — or, on NixOS/home-manager,
    `services.anime-notif.settings.sources`.

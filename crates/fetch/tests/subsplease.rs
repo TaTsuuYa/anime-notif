@@ -68,6 +68,10 @@ fn extracts_captured_subsplease_response() {
             show_url.starts_with("https://subsplease.org/shows/") && show_url.ends_with('/'),
             "show url should be built from the page slug, got {show_url:?}"
         );
+        assert_eq!(
+            release.source_icon_url.as_deref(),
+            Some("https://subsplease.org/favicon.ico")
+        );
     }
 }
 

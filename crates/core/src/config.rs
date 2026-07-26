@@ -64,6 +64,19 @@ pub struct NotificationsConfig {
     /// user who points `downloads.methods.magnet.command` at a torrent
     /// client would not want show-page clicks going there too.
     pub open_command: Option<String>,
+    /// Default notification sound: a specific sound file. Takes
+    /// precedence over `sound_name` if both are set.
+    #[serde(default)]
+    pub sound_file: Option<PathBuf>,
+    /// Default notification sound: a freedesktop sound-theme name (e.g.
+    /// `"message-new-instant"`), used when `sound_file` is unset.
+    #[serde(default)]
+    pub sound_name: Option<String>,
+    /// Per-source sound overrides, keyed by source id. A source with
+    /// either field set here uses this table exclusively (not merged with
+    /// the global `sound_file`/`sound_name`) — see `docs/notifications.md`.
+    #[serde(default)]
+    pub sources: HashMap<String, SourceNotificationOverride>,
 }
 
 impl Default for NotificationsConfig {
@@ -71,8 +84,23 @@ impl Default for NotificationsConfig {
         Self {
             open_show_page: true,
             open_command: None,
+            sound_file: None,
+            sound_name: None,
+            sources: HashMap::new(),
         }
     }
+}
+
+/// A per-source notification override (currently just sound).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SourceNotificationOverride {
+    /// This source's notification sound file, overriding the global
+    /// `notifications.sound_file`/`sound_name`.
+    pub sound_file: Option<PathBuf>,
+    /// This source's notification sound-theme name, overriding the global
+    /// default. Ignored if `sound_file` is also set here.
+    pub sound_name: Option<String>,
 }
 
 /// Global daemon settings.
@@ -457,6 +485,47 @@ mod tests {
         assert_eq!(
             cfg.notifications.open_command.as_deref(),
             Some("firefox {url}")
+        );
+    }
+
+    #[test]
+    fn notifications_sound_defaults_to_none() {
+        let cfg = Config::default();
+        assert_eq!(cfg.notifications.sound_file, None);
+        assert_eq!(cfg.notifications.sound_name, None);
+        assert!(cfg.notifications.sources.is_empty());
+    }
+
+    #[test]
+    fn notifications_sound_can_be_configured_globally_and_per_source() {
+        let toml = r#"
+            [notifications]
+            sound_file = "/usr/share/sounds/default.oga"
+
+            [notifications.sources.subsplease]
+            sound_file = "/usr/share/sounds/subsplease.oga"
+
+            [notifications.sources.nyaa]
+            sound_name = "message-new-instant"
+        "#;
+        let cfg = Config::parse(toml, Path::new("t.toml")).unwrap();
+        assert_eq!(
+            cfg.notifications.sound_file.as_deref(),
+            Some(Path::new("/usr/share/sounds/default.oga"))
+        );
+        assert_eq!(
+            cfg.notifications
+                .sources
+                .get("subsplease")
+                .and_then(|o| o.sound_file.as_deref()),
+            Some(Path::new("/usr/share/sounds/subsplease.oga"))
+        );
+        assert_eq!(
+            cfg.notifications
+                .sources
+                .get("nyaa")
+                .and_then(|o| o.sound_name.as_deref()),
+            Some("message-new-instant")
         );
     }
 

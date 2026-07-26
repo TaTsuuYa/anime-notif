@@ -108,6 +108,7 @@ mod tests {
             method,
             link: format!("link-{resolution}-{method}"),
             cover_url: None,
+            source_icon_url: None,
             show_url: None,
             raw_id: None,
         }

@@ -8,6 +8,56 @@ A show's category controls this (see `docs/config.md`'s `[[categories]]`):
 once resolution-wait has resolved the episode, not on every raw sighting of
 a variant).
 
+## Anatomy of a notification
+
+A desktop notification has more parts than "title and body," and two of
+them are easy to mix up — this tripped us up too (cover art used to show
+where the app icon should be). What anime-notif sets:
+
+| Part | What it shows | Where it comes from |
+|---|---|---|
+| Title | The series name | — |
+| Body | Episode/resolution/method (e.g. `Episode 1121 [1080] via magnet`) | — |
+| **Small badge icon** | A small icon in the corner identifying *who* sent the notification — like an app's taskbar icon | The source's own icon (`icon` in the source plugin, e.g. SubsPlease's favicon), falling back to anime-notif's bundled icon if the source has none configured or it fails to fetch |
+| **Big content image** | A larger image shown in the notification body — this is where the show's cover art belongs | The release's cover art (`fields.cover` in the source plugin), if the source provides one; no image at all if not (nothing sensible to substitute for "a picture of this specific show") |
+| Sound | Plays when the notification appears | `notifications.sound_file`/`sound_name`, globally or per source — see below |
+| Actions | Buttons (or the click-the-body action) | See "Actions" below |
+
+Concretely, in the underlying D-Bus notification: the badge icon is the
+`app_icon` parameter, the content image is the `image-path` **hint**, which
+most notification daemons render as the main picture and demote `app_icon`
+to a small corner overlay once both are present. Setting only one field
+for both purposes (what earlier versions of anime-notif did) makes
+whichever was set fill the main image slot — which is why cover art was
+appearing in the app-icon's place: it was the *only* image being set at
+all.
+
+### Sound
+
+```toml
+[notifications]
+sound_file = "/usr/share/sounds/freedesktop/stereo/message-new-instant.oga"
+# sound_name = "message-new-instant"   # alternative: a freedesktop sound-theme name instead of a file
+
+[notifications.sources.subsplease]
+sound_file = "/home/you/sounds/subsplease-ding.oga"
+```
+
+- `notifications.sound_file`/`sound_name` set the **default** sound for
+  every notification. `sound_file` (a specific audio file) wins if both
+  are set.
+- `notifications.sources.<source-id>.sound_file`/`sound_name` overrides
+  the default for one source's notifications specifically. Setting
+  *either* field for a source uses that source's table exclusively — it
+  doesn't merge with the global default (e.g. a source with only
+  `sound_name` set does **not** fall back to a global `sound_file`).
+- Leave everything unset (the default) to just get your notification
+  daemon's own default sound behavior.
+
+Confirmation notifications (Download/Whitelist/Blacklist results, below)
+are always silent, regardless of this setting — they're a rapid-fire
+response to your own click, not a new-episode alert.
+
 ## Actions
 
 Every notification includes a **Download** action (manually (re-)trigger
@@ -114,15 +164,15 @@ Where it stops tells you what's wrong:
   known download" because the episode was never actually seen) — the
   message explains what happened.
 
-## Cover art
+## Cover art and source icon caching
 
-If a release has a `cover` URL (see `docs/sources.md`), the daemon fetches
-it and caches it locally (keyed by URL hash — an image is only ever
-downloaded once) and sets it as the notification icon. If the source
-doesn't provide one, or the fetch fails, it falls back to the bundled
-default icon (`assets/icon.svg`, embedded in the binary and written to the
-cache directory once at startup — see `anime-notif-daemon`'s `cover`
-module).
+Both the release's cover art (`fields.cover`) and the source's badge icon
+(`icon`) are fetched once and cached locally, keyed by URL hash — an image
+is only ever downloaded once, regardless of how many notifications reuse
+it (see `anime-notif-daemon`'s `cover` module). The bundled default icon
+(`assets/icon.svg`) is embedded in the binary itself and written to the
+cache directory once at startup, so it's available even with no source
+icon configured and no network access.
 
 ## Security note
 

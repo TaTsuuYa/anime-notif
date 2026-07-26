@@ -44,7 +44,10 @@ category/rule/method-key consistency.
 - [`source::SourcePlugin`](../crates/core/src/source.rs) — the source-plugin
   TOML schema (see `docs/sources.md`) and its `compile()` step, which
   pre-parses every jq path and regex into a [`source::CompiledSource`] so
-  polling doesn't re-parse on every call.
+  polling doesn't re-parse on every call. `icon` is the one plugin field
+  that isn't a `path`-based extractor: a plain constant URL (a source has
+  one icon, not one per release), carried through to `CompiledSource::icon_url`
+  and copied onto every `Release` as `source_icon_url`.
 - [`extract::extract`](../crates/core/src/extract.rs) — turns a source's raw
   JSON response into `Vec<Release>` using a `CompiledSource`'s field rules.
   Malformed items/variants are skipped and reported as warnings rather than
@@ -101,7 +104,13 @@ doesn't exist.
 
 `notify` defines the `Notifier` trait — `notify(&Notification)`, fire-and-
 forget — and a Linux backend (`LinuxNotifier`, via `notify-rust`/D-Bus)
-with real action buttons. Every `NotificationAction` carries a full URL
+with real action buttons. `Notification` keeps the small app/source badge
+(`icon_path`) and the big content image (`image_path`) as two separate
+fields (mapped to D-Bus's `app_icon` parameter and `image-path` hint
+respectively) rather than one, plus an optional `sound: Option<Sound>`
+(`Sound::File`/`Sound::Name`, mapped to the `sound-file`/`sound-name`
+hints) — see `docs/notifications.md`'s "Anatomy of a notification" for why
+the icon/image split matters. Every `NotificationAction` carries a full URL
 (the daemon's control server) rather than an opaque id, so both a native
 button click and the (not-yet-built) plain-link fallback converge on the
 same action-handling code path. `NullNotifier` records notifications
@@ -145,12 +154,18 @@ Ties everything together:
   invalidate every notification action button still on screen from before
   it, which is indistinguishable from "the button doesn't work" without
   digging through logs. Every request (accepted or rejected) is logged.
-- [`cover`](../crates/daemon/src/cover.rs) — cover art fetch/cache for
-  notification icons. The default icon (`assets/icon.svg`) is embedded in
-  the binary via `include_bytes!` and written out to the cache directory
-  once at startup, rather than resolved as an installed data file at
-  runtime — one less thing the Nix package (or any other packaging) has to
-  get right.
+- [`cover`](../crates/daemon/src/cover.rs) — shared fetch/cache logic
+  (`fetch_cover_cached`) used for both the release's cover art
+  (`Release::cover_url` → `Notification::image_path`, the big content
+  image) and the source's badge icon (`CompiledSource::icon_url` →
+  `Notification::icon_path`, the small badge) — same caching-by-URL-hash
+  behavior either way, just fed into different `Notification` fields by
+  `Engine::send_notification`. The default icon (`assets/icon.svg`) is
+  embedded in the binary via `include_bytes!` and written out to the cache
+  directory once at startup as the `icon_path` fallback when a source has
+  no `icon` configured or it fails to fetch, rather than resolved as an
+  installed data file at runtime — one less thing the Nix package (or any
+  other packaging) has to get right.
 
 See `docs/downloads.md` and `docs/notifications.md` for the user-facing
 behavior this implements.

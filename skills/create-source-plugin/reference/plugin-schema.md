@@ -17,6 +17,7 @@ sync if you're updating the schema.
 | `headers` | no | Extra HTTP headers. Values may reference `${VAR}` (expanded from the environment at load time — for API keys, etc). |
 | `query` | no | Query string parameters. |
 | `body` | no | Request body, for `POST`. |
+| `icon` | no | A fixed URL to the source's own icon (e.g. its favicon) — shown as the small app/source badge on every notification from this source. A single constant for the whole source (unlike `fields.cover`, which is per-release). |
 | `items` | yes | jq-style path to the release array in the response. |
 | `variants` | no (`"."`) | jq-style path, *relative to each item*, to its download variants. Omit when an item has exactly one resolution/method/link. |
 | `fields` | yes | Field extraction rules — see below. |

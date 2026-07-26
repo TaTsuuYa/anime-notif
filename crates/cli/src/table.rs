@@ -191,6 +191,7 @@ mod tests {
                 method: DownloadMethod::Magnet,
                 link: "magnet:?xt=aaa".into(),
                 cover_url: None,
+                source_icon_url: None,
                 show_url: None,
                 raw_id: None,
             }],

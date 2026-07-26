@@ -188,6 +188,13 @@ pub struct SourcePlugin {
     /// Request body, for `POST`.
     #[serde(default)]
     pub body: Option<String>,
+    /// A fixed URL to the source's own icon (e.g. its favicon), used as
+    /// the small app/source badge on notifications for every release from
+    /// this source — see `docs/notifications.md`. Unlike `fields.cover`,
+    /// this is a single constant for the whole source, not extracted from
+    /// each item, since a source has one icon, not one per release.
+    #[serde(default)]
+    pub icon: Option<String>,
     /// jq path to the array (or object, whose values are iterated) of
     /// releases in the response.
     pub items: String,
@@ -278,6 +285,7 @@ impl SourcePlugin {
             headers: self.headers.clone(),
             query: self.query.clone(),
             body: self.body.clone(),
+            icon_url: self.icon.clone(),
             items,
             variants,
             fields,
@@ -437,6 +445,9 @@ pub struct CompiledSource {
     pub query: HashMap<String, String>,
     /// Request body.
     pub body: Option<String>,
+    /// Fixed URL to the source's own icon, used as the small app/source
+    /// badge on its notifications.
+    pub icon_url: Option<String>,
     /// Path to the release array.
     pub items: JqPath,
     /// Path (relative to each item) to its download variants.
@@ -550,6 +561,22 @@ link       = { path = ".magnet" }
         assert_eq!(
             compiled.fields.variant.resolution.extract(&variant),
             Some("480".to_string())
+        );
+    }
+
+    #[test]
+    fn icon_defaults_to_none_and_passes_through_when_set() {
+        let compiled = SourcePlugin::parse(SUBSPLEASE_TOML, Path::new("t.toml")).unwrap();
+        assert_eq!(compiled.icon_url, None);
+
+        let with_icon = SUBSPLEASE_TOML.replace(
+            "endpoint = \"https://subsplease.org/api/\"",
+            "endpoint = \"https://subsplease.org/api/\"\nicon = \"https://subsplease.org/favicon.ico\"",
+        );
+        let compiled = SourcePlugin::parse(&with_icon, Path::new("t.toml")).unwrap();
+        assert_eq!(
+            compiled.icon_url.as_deref(),
+            Some("https://subsplease.org/favicon.ico")
         );
     }
 

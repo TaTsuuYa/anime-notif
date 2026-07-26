@@ -82,6 +82,7 @@ pub fn extract(source: &CompiledSource, root: &Value) -> ExtractionResult {
                 method,
                 link,
                 cover_url: cover_url.clone(),
+                source_icon_url: source.icon_url.clone(),
                 show_url: show_url.clone(),
                 raw_id: raw_id.clone(),
             });
@@ -275,5 +276,30 @@ regex = "^\\d+\\s*-\\s*\\d+$"
         let result = extract(&source, &root);
         assert_eq!(result.releases.len(), 1);
         assert!(result.warnings.is_empty());
+    }
+
+    #[test]
+    fn source_icon_url_is_copied_onto_every_release() {
+        let with_icon = SUBSPLEASE_TOML.replace(
+            "endpoint = \"https://subsplease.org/api/\"",
+            "endpoint = \"https://subsplease.org/api/\"\nicon = \"https://subsplease.org/favicon.ico\"",
+        );
+        let source = SourcePlugin::parse(&with_icon, Path::new("t.toml")).unwrap();
+        let result = extract(&source, &subsplease_sample());
+
+        assert!(!result.releases.is_empty());
+        for release in &result.releases {
+            assert_eq!(
+                release.source_icon_url.as_deref(),
+                Some("https://subsplease.org/favicon.ico")
+            );
+        }
+    }
+
+    #[test]
+    fn source_icon_url_is_none_when_not_configured() {
+        let source = SourcePlugin::parse(SUBSPLEASE_TOML, Path::new("t.toml")).unwrap();
+        let result = extract(&source, &subsplease_sample());
+        assert!(result.releases.iter().all(|r| r.source_icon_url.is_none()));
     }
 }

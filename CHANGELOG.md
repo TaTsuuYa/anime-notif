@@ -203,3 +203,28 @@ follows [Keep a Changelog](https://keepachangelog.com/).
   the action-click path in real time while debugging.
 - `serve` now logs to that file in addition to stdout/stderr (unchanged,
   so systemd/journald capture is unaffected).
+
+### Added
+- **Notification sound.** New `notifications.sound_file`/`sound_name`
+  config keys set a default sound for every notification (`sound_file`, a
+  specific audio file, wins if both are set), and a
+  `[notifications.sources.<id>]` table (`sound_file`/`sound_name`)
+  overrides it per source — setting either field there uses that source's
+  table exclusively rather than merging with the global default.
+  Confirmation notifications (Download/Whitelist/Blacklist results) are
+  always silent. `anime-notif-notify` gained a `Sound` enum
+  (`File(PathBuf)`/`Name(String)`, mapped to the `sound-file`/`sound-name`
+  D-Bus hints) and `Engine::resolve_sound` implements the precedence.
+
+### Fixed
+- **Cover art was showing where the app/source icon should be.** Both
+  images were being crammed into the single D-Bus `app_icon` parameter via
+  one `icon_path` field, so whichever was set filled the main image slot.
+  `Notification` now has two separate fields — `icon_path` (small
+  app/source badge, the `app_icon` parameter) and `image_path` (big content
+  image, the `image-path` hint) — and source plugins can declare a new
+  top-level `icon` field (a fixed URL, e.g. a favicon) providing the
+  former; `fields.cover` continues to provide the latter, per release.
+  `sources/subsplease.toml` now sets `icon` to SubsPlease's favicon.
+  `docs/notifications.md` gained an "Anatomy of a notification" section
+  explaining the D-Bus `app_icon`-vs-`image-path` distinction end to end.

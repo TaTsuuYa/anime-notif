@@ -6,7 +6,7 @@
 
 use notify_rust::{Hint, Timeout};
 
-use crate::{Notification, Notifier, NotifyError};
+use crate::{Notification, Notifier, NotifyError, Sound};
 
 /// Notifier backend for Linux desktops with a running notification
 /// service (D-Bus).
@@ -17,8 +17,26 @@ impl Notifier for LinuxNotifier {
         let mut n = notify_rust::Notification::new();
         n.summary(&notification.title);
         n.body(&notification.body);
+        // `.icon()` sets the D-Bus `app_icon` parameter — the small badge
+        // identifying the notifying app/source, not the big content image
+        // (see `Notification`'s doc comment for why these are different).
         if let Some(icon) = &notification.icon_path {
             n.icon(&icon.to_string_lossy());
+        }
+        // `image-path` is the hint most notification daemons treat as the
+        // main content image, shown alongside/instead of the small
+        // app_icon badge — this is where cover art belongs.
+        if let Some(image) = &notification.image_path {
+            n.hint(Hint::ImagePath(image.to_string_lossy().into_owned()));
+        }
+        match &notification.sound {
+            Some(Sound::File(path)) => {
+                n.hint(Hint::SoundFile(path.to_string_lossy().into_owned()));
+            }
+            Some(Sound::Name(name)) => {
+                n.hint(Hint::SoundName(name.clone()));
+            }
+            None => {}
         }
         for action in &notification.actions {
             n.action(&action.id, &action.label);

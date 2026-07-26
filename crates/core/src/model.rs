@@ -65,6 +65,11 @@ pub struct Release {
     pub link: String,
     /// Series cover image URL, if the source provides one.
     pub cover_url: Option<String>,
+    /// The source's own icon URL (e.g. its favicon), if configured —
+    /// copied from the plugin's fixed `icon` setting (same value for every
+    /// release from this source). Used as the small app/source badge on
+    /// notifications (`docs/notifications.md`).
+    pub source_icon_url: Option<String>,
     /// The show's page on the source's website, if the source provides
     /// enough information to build one. Used as a notification's
     /// click-to-open target (`docs/notifications.md`).
@@ -133,6 +138,7 @@ mod tests {
             method: DownloadMethod::Direct,
             link: link.into(),
             cover_url: None,
+            source_icon_url: None,
             show_url: None,
             raw_id: None,
         }

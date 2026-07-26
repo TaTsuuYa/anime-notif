@@ -16,7 +16,7 @@ use std::time::Duration;
 use anime_notif_core::config::CategoryDef;
 use anime_notif_core::{Config, DownloadMethod, Release};
 use anime_notif_download::{DownloadRequest, Downloader};
-use anime_notif_notify::{Notification, NotificationAction, Notifier};
+use anime_notif_notify::{Notification, NotificationAction, Notifier, Sound};
 use anime_notif_store::{InteractionKind, SeriesRow, Store};
 
 use crate::cover;
@@ -302,11 +302,24 @@ impl Engine {
             }
         }
 
-        let icon_path = match &chosen.cover_url {
+        // Small app/source badge: the source's own icon (e.g. its
+        // favicon) when configured, falling back to our bundled default —
+        // never the cover art, which goes in `image_path` instead (see
+        // `Notification`'s doc comment for why these are two different
+        // things).
+        let icon_path = match &chosen.source_icon_url {
             Some(url) => cover::fetch_cover_cached(&self.http_client, &self.cache_dir, url)
                 .await
                 .or_else(|| self.default_icon_path.clone()),
             None => self.default_icon_path.clone(),
+        };
+        // Big content image: the show's cover art, shown in the
+        // notification body. Left unset (no fallback) if unavailable —
+        // there's nothing sensible to substitute for "a picture of this
+        // specific show".
+        let image_path = match &chosen.cover_url {
+            Some(url) => cover::fetch_cover_cached(&self.http_client, &self.cache_dir, url).await,
+            None => None,
         };
 
         let notification = Notification {
@@ -316,10 +329,35 @@ impl Engine {
                 chosen.episode, chosen.resolution, chosen.method
             ),
             icon_path,
+            image_path,
+            sound: self.resolve_sound(&chosen.source_id),
             actions,
         };
         self.notifier.notify(&notification)?;
         Ok(())
+    }
+
+    /// Resolves the sound to play for a notification from `source_id`: a
+    /// per-source override (`notifications.sources.<id>`) if it sets
+    /// either `sound_file`/`sound_name`, otherwise the global
+    /// `notifications.sound_file`/`sound_name`, preferring a file over a
+    /// themed name at whichever level applies. `None` if nothing is
+    /// configured at all (the notification daemon's own default applies).
+    fn resolve_sound(&self, source_id: &str) -> Option<Sound> {
+        let cfg = &self.config.notifications;
+        let over = cfg.sources.get(source_id);
+        let has_override = over.is_some_and(|o| o.sound_file.is_some() || o.sound_name.is_some());
+
+        let (sound_file, sound_name) = if has_override {
+            let over = over.unwrap();
+            (over.sound_file.clone(), over.sound_name.clone())
+        } else {
+            (cfg.sound_file.clone(), cfg.sound_name.clone())
+        };
+
+        sound_file
+            .map(Sound::File)
+            .or_else(|| sound_name.map(Sound::Name))
     }
 
     /// Builds an action URL; `target_url` is only used by the `open_show`
@@ -443,6 +481,7 @@ impl Engine {
                 method: DownloadMethod::parse(&s.method).unwrap_or(DownloadMethod::Direct),
                 link: s.link.clone(),
                 cover_url: None,
+                source_icon_url: None,
                 show_url: None,
                 raw_id: None,
             })
@@ -547,6 +586,8 @@ impl Engine {
             title: title.to_string(),
             body: message.to_string(),
             icon_path: self.default_icon_path.clone(),
+            image_path: None,
+            sound: None,
             actions: Vec::new(),
         };
         if let Err(err) = self.notifier.notify(&notification) {
@@ -588,6 +629,7 @@ mod tests {
             method,
             link: format!("magnet:?xt={series}-{episode}-{resolution}"),
             cover_url: None,
+            source_icon_url: None,
             show_url: None,
             raw_id: None,
         }
@@ -602,6 +644,19 @@ mod tests {
     ) -> Release {
         Release {
             cover_url: Some(cover_url.to_string()),
+            ..release(series, episode, resolution, method)
+        }
+    }
+
+    fn release_with_source_icon(
+        series: &str,
+        episode: &str,
+        resolution: &str,
+        method: DownloadMethod,
+        source_icon_url: &str,
+    ) -> Release {
+        Release {
+            source_icon_url: Some(source_icon_url.to_string()),
             ..release(series, episode, resolution, method)
         }
     }
@@ -987,7 +1042,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn notification_uses_fetched_cover_art_when_available() {
+    async fn cover_art_becomes_the_big_image_not_the_small_icon() {
         use wiremock::matchers::{method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -1016,12 +1071,16 @@ mod tests {
 
         let sent = notifier.sent.lock().unwrap();
         assert_eq!(sent.len(), 1);
-        let icon = sent[0].icon_path.as_ref().expect("expected an icon path");
-        assert_eq!(std::fs::read(icon).unwrap(), b"cover-bytes");
+        // Cover art is the big content image...
+        let image = sent[0].image_path.as_ref().expect("expected an image path");
+        assert_eq!(std::fs::read(image).unwrap(), b"cover-bytes");
+        // ...and never the small app/source icon (no source_icon_url and
+        // no default_icon_path configured in this test, so it's None).
+        assert_eq!(sent[0].icon_path, None);
     }
 
     #[tokio::test]
-    async fn notification_falls_back_to_default_icon_when_no_cover() {
+    async fn notification_falls_back_to_default_icon_when_no_source_icon() {
         let (mut engine, notifier, _downloader) = make_engine(Config::default()).await;
         let icon_dir = tempfile::tempdir().unwrap();
         let default_icon = crate::cover::ensure_default_icon(icon_dir.path()).unwrap();
@@ -1039,5 +1098,101 @@ mod tests {
 
         let sent = notifier.sent.lock().unwrap();
         assert_eq!(sent[0].icon_path, Some(default_icon));
+        assert_eq!(sent[0].image_path, None);
+    }
+
+    #[tokio::test]
+    async fn notification_uses_fetched_source_icon_as_the_small_badge() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/favicon.ico"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"icon-bytes".to_vec()))
+            .mount(&server)
+            .await;
+
+        let (mut engine, notifier, _downloader) = make_engine(Config::default()).await;
+        let cache_dir = tempfile::tempdir().unwrap();
+        engine.cache_dir = cache_dir.path().to_path_buf();
+
+        let icon_url = format!("{}/favicon.ico", server.uri());
+        engine
+            .process_poll(vec![release_with_source_icon(
+                "One Piece",
+                "1121",
+                "1080",
+                DownloadMethod::Magnet,
+                &icon_url,
+            )])
+            .await
+            .unwrap();
+
+        let sent = notifier.sent.lock().unwrap();
+        let icon = sent[0].icon_path.as_ref().expect("expected an icon path");
+        assert_eq!(std::fs::read(icon).unwrap(), b"icon-bytes");
+        assert_eq!(sent[0].image_path, None);
+    }
+
+    #[tokio::test]
+    async fn resolve_sound_prefers_source_override_over_global() {
+        let mut config = Config::default();
+        config.notifications.sound_file = Some(std::path::PathBuf::from("/global.oga"));
+        config.notifications.sources.insert(
+            "subsplease".into(),
+            anime_notif_core::config::SourceNotificationOverride {
+                sound_file: Some(std::path::PathBuf::from("/subsplease.oga")),
+                sound_name: None,
+            },
+        );
+        let (engine, _notifier, _downloader) = make_engine(config).await;
+
+        assert_eq!(
+            engine.resolve_sound("subsplease"),
+            Some(Sound::File("/subsplease.oga".into()))
+        );
+        // A source with no override at all falls back to the global default.
+        assert_eq!(
+            engine.resolve_sound("other-source"),
+            Some(Sound::File("/global.oga".into()))
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_sound_name_used_when_no_file_configured() {
+        let mut config = Config::default();
+        config.notifications.sound_name = Some("message-new-instant".into());
+        let (engine, _notifier, _downloader) = make_engine(config).await;
+        assert_eq!(
+            engine.resolve_sound("anything"),
+            Some(Sound::Name("message-new-instant".into()))
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_sound_is_none_when_nothing_configured() {
+        let (engine, _notifier, _downloader) = make_engine(Config::default()).await;
+        assert_eq!(engine.resolve_sound("subsplease"), None);
+    }
+
+    #[tokio::test]
+    async fn notification_carries_resolved_sound() {
+        let mut config = Config::default();
+        config.notifications.sound_file = Some(std::path::PathBuf::from("/global.oga"));
+        let (engine, notifier, _downloader) = make_engine(config).await;
+
+        engine
+            .process_poll(vec![release(
+                "One Piece",
+                "1121",
+                "1080",
+                DownloadMethod::Magnet,
+            )])
+            .await
+            .unwrap();
+
+        let sent = notifier.sent.lock().unwrap();
+        assert_eq!(sent[0].sound, Some(Sound::File("/global.oga".into())));
     }
 }

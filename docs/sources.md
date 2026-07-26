@@ -18,6 +18,7 @@ endpoint = "https://subsplease.org/api/"
 method = "GET"
 interval = "10m"
 query = { f = "latest", tz = "Africa/Casablanca" }
+icon = "https://subsplease.org/favicon.ico"
 
 items = ".[]"
 variants = ".downloads[]"
@@ -54,6 +55,7 @@ a plugin (see `docs/cli.md`).
 | `headers` | no | Extra HTTP headers. Values may reference `${VAR}` (expanded from the environment when the file loads). |
 | `query` | no | Query string parameters. |
 | `body` | no | Request body, for `POST`. |
+| `icon` | no | A fixed URL to the source's own icon (e.g. its favicon) — shown as the small app/source badge on every notification from this source. A single constant for the whole source (unlike `fields.cover`, which is per-release), since a source has one icon, not one per show. See `docs/notifications.md`'s "Anatomy of a notification". |
 | `items` | yes | jq-style path to the release array in the response (see below). |
 | `variants` | no (`"."`) | jq-style path, relative to each item, to its download variants. Leave unset when an item *is* a single variant (one resolution/method/link per item). |
 | `fields` | yes | Field extraction rules — see below. |
