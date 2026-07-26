@@ -55,7 +55,11 @@ case, only that *we* never wire up anything that would make it do so.
 Every [`NotificationAction`](../crates/notify/src/lib.rs) carries a full
 URL pointing at the daemon's **loopback control server**
 (`http://127.0.0.1:<port>/action?...`, bound to `127.0.0.1` only, with a
-random per-run token required on every request) — this is true whether the
+token required on every request — persisted at `<state dir>/control_token`
+and reused across restarts, specifically so a notification shown before a
+restart keeps working: a token regenerated on every restart would silently
+invalidate every button on every notification still on screen, which
+looked exactly like "clicking it does nothing") — this is true whether the
 action is triggered by a native button or a plain link, so action handling
 (`Engine::handle_action` in `anime-notif-daemon`, one of
 `download`/`whitelist`/`blacklist`/`open_show`) lives in exactly one place
@@ -75,21 +79,40 @@ regardless of how the click happened:
 
 ### If clicking an action seems to do nothing
 
-The click path is logged end to end at `info`/`debug` level — with
-`RUST_LOG=debug` (see `docs/cli.md`'s `serve` section, or
-`services.anime-notif.logLevel` on Nix), `journalctl` for the service shows,
-in order: `showing notification` → `notification action clicked` (from
-`anime-notif-notify`, once you click) → `action request delivered` →
-`handling notification action` / `action handled` (from
-`anime-notif-daemon`, once the control server receives it). If you don't
-see the "clicked" line at all, the click never reached our code (a
-notification-daemon/desktop-environment issue, outside our control — some
-desktops don't render/deliver actions for banner popups the way they do for
-notifications opened from the message tray/calendar, for example); if you
-see "clicked" and "delivered" but nothing after that, check the service is
-still the same one that showed the notification (a restarted daemon
-generates a new per-run token, invalidating any notification still on
-screen from before the restart).
+The click path is logged end to end. Run `anime-notif logs --follow` (see
+`docs/cli.md`) — with `RUST_LOG=debug anime-notif serve` for maximum
+detail (`services.anime-notif.logLevel = "debug"` on Nix) — and click the
+button again. In order, you should see:
+
+1. `showing notification` (`anime-notif-notify`, when the notification is
+   first displayed).
+2. `notification action clicked` (`anime-notif-notify`, once you click).
+3. `action request delivered` (`anime-notif-notify`, once the HTTP request
+   to the control server succeeds).
+4. `control server received an action request` (`anime-notif-daemon::control`,
+   server-side receipt).
+5. `handling notification action` / `action handled` (`anime-notif-daemon::engine`,
+   the actual work).
+
+Where it stops tells you what's wrong:
+
+- **No line 2 at all**: the click never reached our code — a
+  notification-daemon/desktop-environment issue, outside our control (some
+  desktops don't render/deliver actions for banner popups the way they do
+  for notifications opened from the message tray/calendar, for example).
+- **Line 2 but not 3**: the HTTP request to the control server failed —
+  check the warning logged alongside it for why (e.g. the daemon isn't
+  running, or something's blocking loopback connections).
+- **Line 3 but not 4**: the request never reached the server, which is
+  unusual for loopback traffic and worth reporting as a bug.
+- **Line 4, then `action rejected: token mismatch`**: the persisted token
+  file (`<state dir>/control_token`) is missing, unreadable, or was
+  deleted/regenerated since the notification was shown. Confirm it exists
+  and is readable by whichever user runs `serve`.
+- **Line 5 with an error/unexpected message**: the action itself failed
+  for a normal, visible reason (e.g. `handle_download_action` reporting "no
+  known download" because the episode was never actually seen) — the
+  message explains what happened.
 
 ## Cover art
 
@@ -104,7 +127,7 @@ module).
 ## Security note
 
 The control server binds to `127.0.0.1` only (never a public interface)
-and every request requires the per-run token generated at daemon startup —
-so triggering an action requires either the daemon's own notification
-callback or knowledge of that token, not just network access to the
-machine.
+and every request requires the token persisted at `<state dir>/control_token`
+(written with `0600` permissions on Unix) — so triggering an action
+requires either the daemon's own notification callback or read access to
+that file, not just network access to the machine.

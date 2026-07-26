@@ -12,6 +12,7 @@
 
 mod config_write;
 mod error;
+pub mod logs;
 mod selector;
 mod table;
 
@@ -80,6 +81,18 @@ pub enum Command {
         /// What to do to the resolved show.
         action: ShowAction,
     },
+    /// `logs [--follow|-f] [--lines|-n N] [--path]`.
+    Logs {
+        /// Keep printing new lines as they're appended, like `tail -f`,
+        /// after first printing the last `lines` lines. Handled directly
+        /// by the `anime-notif` binary rather than [`dispatch`], since it
+        /// never returns.
+        follow: bool,
+        /// How many recent lines to print (ignored if `path_only`).
+        lines: usize,
+        /// Print the log file's path instead of its content.
+        path_only: bool,
+    },
 }
 
 /// Parses CLI arguments (excluding the program name) into a [`Command`].
@@ -99,8 +112,35 @@ pub fn parse(args: &[String]) -> Result<Command, CliError> {
         "list" => Ok(Command::List),
         "categories" => parse_categories(it),
         "source" => parse_source(it),
+        "logs" => parse_logs(it),
         selector => parse_show(selector, it),
     }
+}
+
+fn parse_logs<'a>(mut it: impl Iterator<Item = &'a String>) -> Result<Command, CliError> {
+    let mut follow = false;
+    let mut lines = 200usize;
+    let mut path_only = false;
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--follow" | "-f" => follow = true,
+            "--path" => path_only = true,
+            "--lines" | "-n" => {
+                let value = it
+                    .next()
+                    .ok_or_else(|| CliError::Usage("logs --lines: expected a number".into()))?;
+                lines = value.parse().map_err(|_| {
+                    CliError::Usage(format!("logs --lines: invalid number {value:?}"))
+                })?;
+            }
+            other => return Err(CliError::Usage(format!("logs: unknown flag {other:?}"))),
+        }
+    }
+    Ok(Command::Logs {
+        follow,
+        lines,
+        path_only,
+    })
 }
 
 fn parse_categories<'a>(mut it: impl Iterator<Item = &'a String>) -> Result<Command, CliError> {
@@ -252,6 +292,23 @@ pub async fn dispatch(
             Ok(table::format_extraction_result(&result))
         }
         Command::Show { selector, action } => dispatch_show(selector, action, config, store).await,
+        Command::Logs {
+            follow: _,
+            lines,
+            path_only,
+        } => {
+            let dir = anime_notif_core::paths::default_log_dir();
+            if path_only {
+                return Ok(format!("{}\n", dir.display()));
+            }
+            match logs::find_current_log_file(&dir) {
+                Some(path) => logs::read_tail(&path, lines),
+                None => Ok(format!(
+                    "No log file found yet at {} — has `anime-notif serve` been run?\n",
+                    dir.display()
+                )),
+            }
+        }
     }
 }
 
@@ -353,6 +410,50 @@ mod tests {
                 location: "sources/subsplease.toml".into(),
             }
         );
+    }
+
+    #[test]
+    fn parses_logs_command_and_flags() {
+        assert_eq!(
+            parse(&args(&["logs"])).unwrap(),
+            Command::Logs {
+                follow: false,
+                lines: 200,
+                path_only: false,
+            }
+        );
+        assert_eq!(
+            parse(&args(&["logs", "--follow", "--lines", "50"])).unwrap(),
+            Command::Logs {
+                follow: true,
+                lines: 50,
+                path_only: false,
+            }
+        );
+        assert_eq!(
+            parse(&args(&["logs", "-f", "-n", "10"])).unwrap(),
+            Command::Logs {
+                follow: true,
+                lines: 10,
+                path_only: false,
+            }
+        );
+        assert_eq!(
+            parse(&args(&["logs", "--path"])).unwrap(),
+            Command::Logs {
+                follow: false,
+                lines: 200,
+                path_only: true,
+            }
+        );
+    }
+
+    #[test]
+    fn logs_rejects_bad_lines_value() {
+        assert!(matches!(
+            parse(&args(&["logs", "--lines", "not-a-number"])),
+            Err(CliError::Usage(_))
+        ));
     }
 
     #[test]

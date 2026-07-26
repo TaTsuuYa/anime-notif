@@ -74,7 +74,7 @@ pub async fn run(config: Config) -> Result<(), DaemonError> {
         notifier: Arc::from(anime_notif_notify::default_notifier()),
         downloader: Arc::new(anime_notif_download::StdDownloader::new()),
         control_base_url: format!("http://{control_addr}"),
-        control_token: control::generate_token(),
+        control_token: control::load_or_generate_token(&cache_dir),
         resolution_wait_by_source,
         http_client: client.clone(),
         cache_dir,

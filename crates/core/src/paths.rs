@@ -41,6 +41,14 @@ pub fn default_cache_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
+/// Default log directory, e.g. `~/.local/share/anime-notif/logs` on Linux.
+/// Kept under the data dir (rather than cache, which the OS/user may clear
+/// at any time) since logs are exactly what you want to still have around
+/// after something's gone wrong.
+pub fn default_log_dir() -> PathBuf {
+    default_data_dir().join("logs")
+}
+
 /// Default base download directory, e.g. `~/Downloads/anime-notif`.
 pub fn default_download_dir() -> PathBuf {
     directories::UserDirs::new()

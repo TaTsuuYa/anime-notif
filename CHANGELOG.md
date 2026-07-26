@@ -177,3 +177,29 @@ follows [Keep a Changelog](https://keepachangelog.com/).
   the next time this happens `journalctl` shows exactly where it stopped
   rather than nothing at all — see `docs/notifications.md`'s new
   troubleshooting section.
+
+### Fixed (confirmed root cause of "Download does nothing")
+- Found the actual bug behind the previous release's logging additions:
+  the control-server token was regenerated on **every** daemon restart.
+  Any notification already on screen (or in the notification history) from
+  before a restart carries the *old* token in its button URLs, so clicking
+  it silently gets rejected as `Forbidden` — and this wasn't logged at all
+  before now, so it looked exactly like nothing happening. The token is
+  now persisted at `<state dir>/control_token` (`0600` on Unix) and reused
+  across restarts; `load_or_generate_token` only generates a new one if
+  that file is missing or empty. Verified end-to-end: started `serve`,
+  killed it, started it again, and confirmed the pre-restart token still
+  authenticates against the new run.
+- The control server now logs every incoming action request (accepted or
+  rejected, with kind/series_id/episode) — a token mismatch used to return
+  `Forbidden` with zero logging anywhere.
+
+### Added
+- `anime-notif logs [--follow|-f] [--lines|-n N] [--path]`: reads the log
+  file `serve` now also writes (daily-rotating, under
+  `anime_notif_core::paths::default_log_dir()`, via `tracing-appender`) —
+  works identically regardless of init system, including Windows/macOS
+  where `journalctl` doesn't exist. `--follow` tails it live, for watching
+  the action-click path in real time while debugging.
+- `serve` now logs to that file in addition to stdout/stderr (unchanged,
+  so systemd/journald capture is unaffected).

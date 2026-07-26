@@ -49,4 +49,14 @@ pub enum CliError {
     /// `source add`) failed.
     #[error("failed to serialize config: {0}")]
     ConfigSerialize(#[from] toml::ser::Error),
+
+    /// Reading or following the log file failed.
+    #[error("failed to read log file {path}: {source}")]
+    LogIo {
+        /// Path that failed.
+        path: std::path::PathBuf,
+        /// Underlying I/O error.
+        #[source]
+        source: std::io::Error,
+    },
 }

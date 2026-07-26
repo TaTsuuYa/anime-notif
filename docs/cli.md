@@ -1,8 +1,9 @@
 # CLI reference
 
 `anime-notif` is a single binary: `anime-notif <command>`. Every command
-except `serve` (the background daemon — lands with the daemon milestone)
-reads the config file and opens the database, then exits.
+except `serve` (the background daemon) and `logs` (reads the log file, not
+the config/database) reads the config file and opens the database, then
+exits.
 
 The config file is `$ANIME_NOTIF_CONFIG` if set, otherwise the platform
 default (see `docs/config.md`). If it doesn't exist yet, built-in defaults
@@ -103,13 +104,18 @@ a clear I/O error; edit your Nix configuration instead.
 ## `serve`
 
 Runs the background daemon in the foreground (service managers wrap it —
-see `docs/nix.md` once the NixOS/home-manager modules land). Polls every
-configured source on its own schedule, runs the resolution-wait workflow
-(`docs/downloads.md`), and serves the loopback control server that handles
-notification actions (`docs/notifications.md`).
+see `docs/nix.md`). Polls every configured source on its own schedule, runs
+the resolution-wait workflow (`docs/downloads.md`), and serves the loopback
+control server that handles notification actions (`docs/notifications.md`).
 
-Logs via `tracing`; control the verbosity with `RUST_LOG` (e.g.
-`RUST_LOG=info anime-notif serve`, `RUST_LOG=debug` for more detail).
+Logs via `tracing` to both stdout/stderr (so `journalctl`/systemd keeps
+capturing it exactly as before) **and** a daily-rotating file under the
+platform log directory (`~/.local/share/anime-notif/logs/` on Linux) —
+`anime-notif logs` reads that file, which works identically regardless of
+init system (unlike `journalctl`, Linux/systemd-only). Control the
+verbosity with `RUST_LOG` (e.g. `RUST_LOG=info anime-notif serve`,
+`RUST_LOG=debug` for more detail — this applies to both the terminal and
+file output).
 
 ```
 $ RUST_LOG=info anime-notif serve
@@ -117,3 +123,30 @@ INFO anime_notif_store::migrations: applied migration version=1
 INFO anime_notif_daemon: control server listening control_addr=127.0.0.1:41131
 INFO anime_notif_daemon: starting poller source=subsplease
 ```
+
+## `logs`
+
+Reads the log file `serve` writes (see above) — the same content whether
+`serve` is running under systemd, launched directly, or on Windows/macOS,
+where `journalctl` doesn't exist at all.
+
+| Command | Effect |
+|---|---|
+| `anime-notif logs` | Prints the last 200 lines and exits. |
+| `anime-notif logs --lines N` / `-n N` | Prints the last `N` lines instead. |
+| `anime-notif logs --follow` / `-f` | Prints recent lines, then keeps printing new ones as they're appended — like `tail -f`. Doesn't follow across midnight log rotation; re-run it to pick up the new day's file. |
+| `anime-notif logs --path` | Prints the log directory's path instead of its content (e.g. to point another tool at it). |
+
+```
+$ anime-notif logs --follow
+2026-07-26T14:40:14.869916Z  INFO anime_notif_daemon::control: control server received an action request kind=download series_id=3 episode=1121
+2026-07-26T14:40:14.870088Z  INFO anime_notif_daemon::engine: handling notification action kind="download" series=One Piece episode="1121"
+2026-07-26T14:40:14.870209Z  INFO anime_notif_daemon::engine: action handled kind="download" series=One Piece Downloading "One Piece" episode 1121 [1080]
+```
+
+Run this (with `RUST_LOG=debug anime-notif serve` for maximum detail) while
+clicking a notification button to see exactly what happens: whether the
+click reached the control server at all (`control server received an
+action request`), whether its token was accepted, and what the action
+handler decided to do. See `docs/notifications.md`'s troubleshooting
+section for what each stage means.

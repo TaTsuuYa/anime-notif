@@ -77,14 +77,25 @@ parsed `Command` against a `Config` + `Store`, returning the text to print
 prefix resolution live in [`selector.rs`](../crates/cli/src/selector.rs);
 table rendering in [`table.rs`](../crates/cli/src/table.rs); the
 config-file-rewriting commands (`categories add/rm`, `source add`) in
-[`config_write.rs`](../crates/cli/src/config_write.rs). See `docs/cli.md`
-for the full command reference.
+[`config_write.rs`](../crates/cli/src/config_write.rs); reading/following
+the log file (`logs`) in [`logs.rs`](../crates/cli/src/logs.rs) — kept as
+plain, directly-testable functions (`find_current_log_file`, `read_tail`,
+`follow`) rather than only living inline in the binary, since `--follow`
+streams forever and can't fit `dispatch`'s "return one string" shape. See
+`docs/cli.md` for the full command reference.
 
 The `anime-notif` binary (`crates/anime-notif`) is a thin entry point:
 resolve the config path → load it (defaults if it doesn't exist yet) →
-open the store → parse argv → dispatch. For every command except `serve`,
-`dispatch` goes to `cli`; for `serve`, it initializes tracing and calls
-`anime_notif_daemon::run(config)` directly instead.
+open the store → parse argv → dispatch. Two commands bypass `dispatch`
+because they don't fit its "return one string" model: `serve` initializes
+logging and calls `anime_notif_daemon::run(config)` directly; `logs
+--follow` calls `anime_notif_cli::logs::follow` directly, since it never
+returns. `serve`'s logging goes to both stdout/stderr (unchanged, so
+systemd/journald keeps working) and a daily-rotating file under
+`anime_notif_core::paths::default_log_dir()` via `tracing-appender`, which
+`anime-notif logs` reads — this way logs are inspectable the same way
+regardless of init system, including on Windows/macOS where `journalctl`
+doesn't exist.
 
 ### `notify` and `download`
 
@@ -125,10 +136,15 @@ Ties everything together:
 - [`scheduler`](../crates/daemon/src/scheduler.rs) — spawns one polling
   task per source on its own interval.
 - [`control`](../crates/daemon/src/control.rs) — the loopback HTTP control
-  server (axum, `127.0.0.1` only, random per-run token): binding is split
-  from serving (`bind_listener` then `serve`) because the bound port is
-  needed to build `Engine.control_base_url`, but serving needs the
-  already-built `Engine` as request state.
+  server (axum, `127.0.0.1` only): binding is split from serving
+  (`bind_listener` then `serve`) because the bound port is needed to build
+  `Engine.control_base_url`, but serving needs the already-built `Engine`
+  as request state. The auth token is persisted at
+  `<state dir>/control_token` (`load_or_generate_token`) rather than
+  regenerated per run — a fresh token on every restart would silently
+  invalidate every notification action button still on screen from before
+  it, which is indistinguishable from "the button doesn't work" without
+  digging through logs. Every request (accepted or rejected) is logged.
 - [`cover`](../crates/daemon/src/cover.rs) — cover art fetch/cache for
   notification icons. The default icon (`assets/icon.svg`) is embedded in
   the binary via `include_bytes!` and written out to the cache directory
