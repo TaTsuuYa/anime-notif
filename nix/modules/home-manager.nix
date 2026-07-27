@@ -59,7 +59,24 @@ in
     systemd.user.services.anime-notif = lib.mkIf pkgs.stdenv.isLinux {
       Unit = {
         Description = "anime-notif background service";
-        After = [ "network-online.target" ];
+        # graphical-session.target (not default.target, which is reached
+        # very early in the user session) so this starts after the desktop
+        # session -- and with it, the org.freedesktop.Notifications
+        # service -- is actually up. Starting before that exists is a real,
+        # observed failure mode: notifications attempted in that window
+        # fail with "ServiceUnknown: The name is not activatable", and
+        # (since the episode is already durably recorded by then) that
+        # notification is gone for good, not just delayed. This narrows
+        # the race but can't eliminate it outright, since nothing
+        # guarantees the notification daemon itself is the first thing to
+        # reach graphical-session.target -- see the non-fatal notify-error
+        # handling in `anime_notif_daemon::engine::send_notification` for
+        # the rest of the mitigation.
+        After = [
+          "network-online.target"
+          "graphical-session.target"
+        ];
+        PartOf = [ "graphical-session.target" ];
       };
       Service = {
         ExecStart = "${lib.getExe cfg.package} serve";
@@ -67,7 +84,7 @@ in
         Restart = "on-failure";
         RestartSec = 10;
       };
-      Install.WantedBy = [ "default.target" ];
+      Install.WantedBy = [ "graphical-session.target" ];
     };
 
     launchd.agents.anime-notif = lib.mkIf pkgs.stdenv.isDarwin {

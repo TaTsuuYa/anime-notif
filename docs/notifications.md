@@ -127,6 +127,32 @@ regardless of how the click happened:
   link-fallback path (for cases where actions aren't reliable) land in a
   later milestone.
 
+### If a notification never showed up in the first place, right after a restart
+
+This is a different failure than "I clicked a button and nothing happened"
+— here, no notification (and so no button) ever appeared for that episode.
+The most common cause: `serve` started polling before the desktop's
+notification service was registered on the session bus yet, which happens
+around login/machine-restart. Look for this in `anime-notif logs`:
+
+```
+ERROR anime_notif_daemon::scheduler: failed to process poll results source=... err=failed to show notification: org.freedesktop.DBus.Error.ServiceUnknown: The name is not activatable
+```
+
+The episode is already recorded as seen by the time the notification is
+attempted, so this specific episode's notification is gone for good, not
+retried on the next poll — use `anime-notif <selector> set category
+liked` (or `source test`, to see what was fetched) to act on it manually.
+Other episodes fetched in the same poll batch are unaffected and still get
+notified/downloaded normally; a single failed notification no longer
+aborts the rest of the batch (see the [changelog](../CHANGELOG.md)).
+
+On home-manager, the systemd `--user` service is ordered after
+`graphical-session.target` specifically to reduce how often this race
+happens (`docs/nix.md`) — it narrows the window but can't close it
+entirely, since nothing guarantees the notification daemon reaches that
+target first.
+
 ### If clicking an action seems to do nothing
 
 The click path is logged end to end. Run `anime-notif logs --follow` (see

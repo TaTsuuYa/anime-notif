@@ -111,6 +111,22 @@ system location rather than your home directory, set
 running as your user just decides who the *process* runs as, not where its
 files live.
 
+The service is ordered `After`/`PartOf`/`WantedBy` **`graphical-session.target`**
+(not `default.target`, which is reached very early in the user session,
+often before the desktop's notification daemon exists) — this matters
+because starting before the notification service is registered on the
+session bus isn't just a delay: any notification attempted in that window
+fails outright (`ServiceUnknown: The name is not activatable`), and since
+the episode is already durably recorded by the time the notification is
+attempted, that specific episode's notification is gone for good rather
+than retried on the next poll. This narrows the boot/login race but can't
+close it entirely (nothing guarantees the notification daemon reaches
+`graphical-session.target` before anime-notif does); a session manager
+that never imports `graphical-session.target` at all (uncommon outside
+minimal/manual WM setups) means the service needs a manual
+`systemctl --user start anime-notif` or a different target — override
+`systemd.user.services.anime-notif.Install.WantedBy` in that case.
+
 ## Source plugins from another flake
 
 A source plugin is just a file, so another repo can publish one as a flake

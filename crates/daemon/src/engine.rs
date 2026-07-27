@@ -333,7 +333,23 @@ impl Engine {
             sound: self.resolve_sound(&chosen.source_id),
             actions,
         };
-        self.notifier.notify(&notification)?;
+        // Deliberately non-fatal: the episode is already durably recorded
+        // (set_last_episode/mark_seen/download all already happened above),
+        // so propagating this via `?` would abort every *other* episode in
+        // this poll batch (process_poll/sweep_pending both loop over
+        // multiple episodes with `?`) over what's usually a transient,
+        // self-recovering failure — e.g. right after a machine restart,
+        // when anime-notif's systemd --user unit starts polling before the
+        // desktop's notification service has registered on the session
+        // bus yet (`org.freedesktop.DBus.Error.ServiceUnknown`).
+        if let Err(err) = self.notifier.notify(&notification) {
+            tracing::warn!(
+                %err,
+                series = %series.title,
+                episode = %chosen.episode,
+                "failed to show notification"
+            );
+        }
         Ok(())
     }
 
@@ -608,6 +624,30 @@ mod tests {
         requests: Mutex<Vec<DownloadRequest>>,
     }
 
+    /// A notifier that fails for specific titles and records the rest —
+    /// simulates a transient backend failure (e.g. the D-Bus notification
+    /// service not being registered yet right after a machine restart).
+    #[derive(Default)]
+    struct FlakyNotifier {
+        fail_titles: Vec<String>,
+        sent: Mutex<Vec<Notification>>,
+    }
+
+    impl Notifier for FlakyNotifier {
+        fn notify(
+            &self,
+            notification: &Notification,
+        ) -> Result<(), anime_notif_notify::NotifyError> {
+            if self.fail_titles.contains(&notification.title) {
+                return Err(anime_notif_notify::NotifyError::Backend(
+                    "org.freedesktop.DBus.Error.ServiceUnknown: The name is not activatable".into(),
+                ));
+            }
+            self.sent.lock().unwrap().push(notification.clone());
+            Ok(())
+        }
+    }
+
     #[async_trait::async_trait]
     impl Downloader for FakeDownloader {
         async fn download(
@@ -662,13 +702,21 @@ mod tests {
     }
 
     async fn make_engine(config: Config) -> (Engine, Arc<NullNotifier>, Arc<FakeDownloader>) {
-        let store = Arc::new(Store::open_in_memory().await.unwrap());
         let notifier = Arc::new(NullNotifier::new());
+        let (engine, downloader) = make_engine_with_notifier(config, notifier.clone()).await;
+        (engine, notifier, downloader)
+    }
+
+    async fn make_engine_with_notifier(
+        config: Config,
+        notifier: Arc<dyn Notifier>,
+    ) -> (Engine, Arc<FakeDownloader>) {
+        let store = Arc::new(Store::open_in_memory().await.unwrap());
         let downloader = Arc::new(FakeDownloader::default());
         let engine = Engine {
             store,
             config: Arc::new(config),
-            notifier: notifier.clone(),
+            notifier,
             downloader: downloader.clone(),
             control_base_url: "http://127.0.0.1:1".into(),
             control_token: "test-token".into(),
@@ -677,7 +725,7 @@ mod tests {
             cache_dir: std::env::temp_dir(),
             default_icon_path: None,
         };
-        (engine, notifier, downloader)
+        (engine, downloader)
     }
 
     #[tokio::test]
@@ -694,6 +742,52 @@ mod tests {
         let series = engine.store.list_all().await.unwrap();
         assert_eq!(series.len(), 1);
         assert_eq!(series[0].last_episode.as_deref(), Some("1121"));
+    }
+
+    #[tokio::test]
+    async fn a_failed_notification_does_not_abort_other_episodes_in_the_same_poll() {
+        // Regression test: right after a machine restart, the very first
+        // notification attempt can fail because the desktop's notification
+        // service isn't registered on the session bus yet. That single
+        // failure used to propagate via `?` out of process_episode_group
+        // and abort the whole `for variants in groups.into_values()` loop
+        // in process_poll, silently dropping every *other* episode in that
+        // poll batch too (they'd only be recovered on the next poll,
+        // minutes later).
+        let notifier = Arc::new(FlakyNotifier {
+            fail_titles: vec!["Naruto".into()],
+            ..Default::default()
+        });
+        let (engine, downloader) =
+            make_engine_with_notifier(Config::default(), notifier.clone()).await;
+
+        let variants = vec![
+            release("Naruto", "1", "1080", DownloadMethod::Magnet),
+            release("One Piece", "1121", "1080", DownloadMethod::Magnet),
+        ];
+        // Must not surface the notifier failure as a hard error, or the
+        // caller (the scheduler) treats the whole poll as failed.
+        engine.process_poll(variants).await.unwrap();
+
+        // One Piece's notification still went out despite Naruto's failing
+        // (regardless of which one the (unordered) episode grouping
+        // processed first).
+        assert_eq!(notifier.sent.lock().unwrap().len(), 1);
+        assert_eq!(notifier.sent.lock().unwrap()[0].title, "One Piece");
+
+        // Both series were still fully processed (mark_seen/set_last_episode),
+        // not just the one whose notification succeeded.
+        let series = engine.store.list_all().await.unwrap();
+        let mut titles: Vec<_> = series
+            .iter()
+            .map(|s| (s.title.as_str(), s.last_episode.as_deref()))
+            .collect();
+        titles.sort();
+        assert_eq!(
+            titles,
+            vec![("Naruto", Some("1")), ("One Piece", Some("1121"))]
+        );
+        assert!(downloader.requests.lock().unwrap().is_empty());
     }
 
     #[tokio::test]

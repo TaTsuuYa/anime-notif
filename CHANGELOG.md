@@ -228,3 +228,27 @@ follows [Keep a Changelog](https://keepachangelog.com/).
   `sources/subsplease.toml` now sets `icon` to SubsPlease's favicon.
   `docs/notifications.md` gained an "Anatomy of a notification" section
   explaining the D-Bus `app_icon`-vs-`image-path` distinction end to end.
+
+### Fixed
+- **Download/Whitelist/Blacklist buttons silently not working after a
+  machine restart.** Root cause: right after a restart, anime-notif's
+  systemd `--user` unit can start polling before the desktop's
+  notification service is registered on the session bus, so the first
+  notification attempt fails
+  (`org.freedesktop.DBus.Error.ServiceUnknown: The name is not
+  activatable`). That failure was propagated with `?` out of
+  `process_episode_group`, aborting `process_poll`'s loop over the *rest*
+  of that poll's episode groups too — so any other episodes fetched in the
+  same batch silently never got notified or downloaded, recoverable only
+  on the next poll cycle. `Engine::send_notification` now treats a
+  notifier failure as non-fatal (logs a warning and continues), matching
+  the pattern `send_confirmation` already used — the specific episode
+  whose notification failed is still lost (it's already marked seen by
+  that point, so nothing to click for it), but every other episode in the
+  batch is now processed normally regardless of ordering.
+  `nix/modules/home-manager.nix`'s systemd unit is now ordered
+  `After`/`PartOf`/`WantedBy` `graphical-session.target` instead of
+  `default.target` (reached much earlier in the session, typically before
+  the notification daemon exists) to narrow the race in the first place.
+  `docs/notifications.md` and `docs/nix.md` document both the failure mode
+  and the mitigation.
