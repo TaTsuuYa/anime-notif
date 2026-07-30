@@ -16,7 +16,7 @@ in
 
     package = lib.mkOption {
       type = lib.types.package;
-      default = self.packages.${pkgs.system}.default;
+      default = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
       defaultText = lib.literalExpression "anime-notif.packages.<system>.default";
       description = "The anime-notif package to run.";
     };

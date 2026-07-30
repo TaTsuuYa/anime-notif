@@ -275,3 +275,11 @@ follows [Keep a Changelog](https://keepachangelog.com/).
   entry added to the captured fixture to exercise it end to end.
   `docs/sources.md`, `docs/config.md`, and `skills/create-source-plugin/`
   document the new tables.
+
+### Fixed
+- `nix flake check`/`nixos-rebuild switch` printed two evaluation
+  warnings on every build: `lib.getExe` guessing at the binary name
+  because the package had no `meta.mainProgram`, and `pkgs.system`/
+  `final.system` (deprecated in favor of `pkgs.stdenv.hostPlatform.system`)
+  in both Nix modules and the overlay. Both are now set correctly; `nix
+  flake check` output is warning-free.

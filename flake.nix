@@ -85,6 +85,7 @@
               # (in-memory sqlite, wiremock-mocked HTTP), so it's safe and
               # valuable to run the test suite as part of the build.
               doCheck = true;
+              meta.mainProgram = "anime-notif";
             }
           );
         in
@@ -177,7 +178,7 @@
     perSystem
     // {
       overlays.default = final: _prev: {
-        anime-notif = self.packages.${final.system}.default;
+        anime-notif = self.packages.${final.stdenv.hostPlatform.system}.default;
       };
 
       nixosModules.default = import ./nix/modules/nixos.nix self;
