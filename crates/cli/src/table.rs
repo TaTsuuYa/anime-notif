@@ -194,6 +194,7 @@ mod tests {
                 source_icon_url: None,
                 show_url: None,
                 raw_id: None,
+                version: 1,
             }],
             warnings: vec!["item 2: missing required field 'series'".into()],
         };

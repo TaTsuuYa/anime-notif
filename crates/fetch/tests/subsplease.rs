@@ -24,7 +24,7 @@ fn extracts_captured_subsplease_response() {
     let result = extract(&source, &root);
 
     // The captured fixture contains one real batch release (Dr. Stone S3,
-    // episode "01-22") among 20 entries; the shipped plugin's [batch]
+    // episode "01-22") among its entries; the shipped plugin's [batch]
     // config skips it by default, which shows up as exactly one warning.
     assert_eq!(
         result.warnings.len(),
@@ -38,6 +38,26 @@ fn extracts_captured_subsplease_response() {
         "the batch release should have been filtered out"
     );
     assert!(!result.releases.is_empty(), "expected at least one release");
+
+    // The fixture also has a synthetic version bump ("Toukutsu Ou - 03v2",
+    // added alongside the real "Toukutsu Ou - 03" entry) exercising the
+    // shipped plugin's [version] table end to end.
+    let versioned = result
+        .releases
+        .iter()
+        .find(|r| r.series_title == "Toukutsu Ou" && r.version == 2)
+        .expect("the 03v2 entry should have been parsed as version 2");
+    assert_eq!(
+        versioned.episode, "03",
+        "episode should be the base, version suffix stripped"
+    );
+    assert!(
+        result
+            .releases
+            .iter()
+            .any(|r| r.series_title == "Toukutsu Ou" && r.episode == "03" && r.version == 1),
+        "the original unversioned 03 entry should still be present as version 1"
+    );
 
     for release in &result.releases {
         assert_eq!(release.source_id, "subsplease");

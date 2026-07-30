@@ -42,6 +42,15 @@ pub fn extract(source: &CompiledSource, root: &Value) -> ExtractionResult {
             }
         }
 
+        let (episode, version) = match source
+            .version
+            .as_ref()
+            .and_then(|v| v.extract(item, &episode))
+        {
+            Some((base, n)) => (base, n),
+            None => (episode, 1),
+        };
+
         let season = source.fields.season.extract(item);
         let cover_url = source.fields.cover.extract(item);
         let show_url = source.fields.show_url.extract(item);
@@ -85,6 +94,7 @@ pub fn extract(source: &CompiledSource, root: &Value) -> ExtractionResult {
                 source_icon_url: source.icon_url.clone(),
                 show_url: show_url.clone(),
                 raw_id: raw_id.clone(),
+                version,
             });
         }
     }
@@ -301,5 +311,76 @@ regex = "^\\d+\\s*-\\s*\\d+$"
         let source = SourcePlugin::parse(SUBSPLEASE_TOML, Path::new("t.toml")).unwrap();
         let result = extract(&source, &subsplease_sample());
         assert!(result.releases.iter().all(|r| r.source_icon_url.is_none()));
+    }
+
+    #[test]
+    fn no_version_table_means_every_release_is_version_one() {
+        let source = SourcePlugin::parse(SUBSPLEASE_TOML, Path::new("t.toml")).unwrap();
+        let root = serde_json::json!({
+            "x": {
+                "show": "Show",
+                "episode": "08v2",
+                "downloads": [{"res": "1080p", "magnet": "magnet:?xt=urn:btih:x"}]
+            }
+        });
+        let result = extract(&source, &root);
+        assert_eq!(result.releases.len(), 1);
+        assert_eq!(result.releases[0].version, 1);
+        assert_eq!(result.releases[0].episode, "08v2");
+    }
+
+    const SUBSPLEASE_TOML_WITH_VERSION: &str = r#"
+id = "subsplease"
+endpoint = "https://subsplease.org/api/"
+method = "GET"
+
+items = ".[]"
+variants = ".downloads[]"
+
+[fields]
+series  = { path = ".show" }
+episode = { path = ".episode", default = "?" }
+
+[fields.variant]
+resolution = { path = ".res", regex = "(\\d+)", default = "480" }
+method     = { default = "magnet" }
+link       = { path = ".magnet" }
+
+[version]
+regex = "^(?P<episode>\\d+)v(?P<version>\\d+)$"
+"#;
+
+    #[test]
+    fn versioned_episode_is_split_into_base_episode_and_version() {
+        let source =
+            SourcePlugin::parse(SUBSPLEASE_TOML_WITH_VERSION, Path::new("t.toml")).unwrap();
+        let root = serde_json::json!({
+            "x": {
+                "show": "Show",
+                "episode": "08v2",
+                "downloads": [{"res": "1080p", "magnet": "magnet:?xt=urn:btih:x"}]
+            }
+        });
+        let result = extract(&source, &root);
+        assert_eq!(result.releases.len(), 1);
+        assert_eq!(result.releases[0].episode, "08");
+        assert_eq!(result.releases[0].version, 2);
+    }
+
+    #[test]
+    fn unversioned_episode_is_left_unchanged_with_version_table_configured() {
+        let source =
+            SourcePlugin::parse(SUBSPLEASE_TOML_WITH_VERSION, Path::new("t.toml")).unwrap();
+        let root = serde_json::json!({
+            "x": {
+                "show": "Show",
+                "episode": "08",
+                "downloads": [{"res": "1080p", "magnet": "magnet:?xt=urn:btih:x"}]
+            }
+        });
+        let result = extract(&source, &root);
+        assert_eq!(result.releases.len(), 1);
+        assert_eq!(result.releases[0].episode, "08");
+        assert_eq!(result.releases[0].version, 1);
     }
 }

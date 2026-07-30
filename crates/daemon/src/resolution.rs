@@ -4,7 +4,7 @@
 //! matching a series' title against declarative rules to seed its
 //! category. Kept free of I/O so it's exhaustively unit-testable.
 
-use anime_notif_core::config::{CategoryDef, Rule};
+use anime_notif_core::config::{CategoryDef, Rule, VersionMode};
 use anime_notif_core::{DownloadMethod, Release};
 
 /// Ranks `resolution` against `fallback`'s preference order: lower is
@@ -62,6 +62,30 @@ pub fn find_desired<'a>(
     )
 }
 
+/// Whether a release should be processed at all, given its `version`, the
+/// configured `mode`, and the series' current `last_episode`.
+///
+/// `last_episode: None` (a brand-new show, or one with no prior resolved
+/// episode) is always eligible, in every mode — otherwise a show whose very
+/// first-ever sighting happens to already be a version bump could never
+/// surface at all. Version `1` (unversioned) is always eligible too; the
+/// mode only gates version 2+.
+pub fn version_eligible(
+    version: u32,
+    mode: VersionMode,
+    last_episode: Option<&str>,
+    episode: &str,
+) -> bool {
+    if version <= 1 || last_episode.is_none() {
+        return true;
+    }
+    match mode {
+        VersionMode::Ignore => false,
+        VersionMode::LatestOnly => last_episode == Some(episode),
+        VersionMode::All => true,
+    }
+}
+
 /// Determines the category a newly-seen series should be assigned, by
 /// matching `rules` in order (first match wins). Falls back to a category
 /// named `"normal"` if defined, else the first defined category.
@@ -111,6 +135,7 @@ mod tests {
             source_icon_url: None,
             show_url: None,
             raw_id: None,
+            version: 1,
         }
     }
 
@@ -177,6 +202,48 @@ mod tests {
         ];
         let found = find_desired(&variants, "1080", DownloadMethod::Magnet).unwrap();
         assert_eq!(found.method, DownloadMethod::Magnet);
+    }
+
+    #[test]
+    fn version_one_is_always_eligible() {
+        assert!(version_eligible(1, VersionMode::Ignore, Some("08"), "08"));
+        assert!(version_eligible(1, VersionMode::Ignore, Some("07"), "08"));
+        assert!(version_eligible(1, VersionMode::LatestOnly, None, "08"));
+    }
+
+    #[test]
+    fn no_prior_episode_is_always_eligible_regardless_of_mode() {
+        assert!(version_eligible(2, VersionMode::Ignore, None, "08"));
+        assert!(version_eligible(2, VersionMode::LatestOnly, None, "08"));
+        assert!(version_eligible(2, VersionMode::All, None, "08"));
+    }
+
+    #[test]
+    fn ignore_mode_rejects_any_version_bump_once_a_prior_episode_exists() {
+        assert!(!version_eligible(2, VersionMode::Ignore, Some("08"), "08"));
+        assert!(!version_eligible(2, VersionMode::Ignore, Some("07"), "08"));
+    }
+
+    #[test]
+    fn latest_only_accepts_version_of_current_episode_only() {
+        assert!(version_eligible(
+            2,
+            VersionMode::LatestOnly,
+            Some("08"),
+            "08"
+        ));
+        assert!(!version_eligible(
+            2,
+            VersionMode::LatestOnly,
+            Some("09"),
+            "08"
+        ));
+    }
+
+    #[test]
+    fn all_mode_accepts_any_version() {
+        assert!(version_eligible(2, VersionMode::All, Some("08"), "08"));
+        assert!(version_eligible(5, VersionMode::All, Some("07"), "08"));
     }
 
     fn categories() -> Vec<CategoryDef> {

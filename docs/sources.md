@@ -37,6 +37,9 @@ link       = { path = ".magnet" }
 
 [batch]
 regex = "^\\d+\\s*-\\s*\\d+$"
+
+[version]
+regex = "^(?P<episode>\\d+)v(?P<version>\\d+)$"
 ```
 
 Run `anime-notif source test sources/subsplease.toml` to fetch the live
@@ -60,6 +63,7 @@ a plugin (see `docs/cli.md`).
 | `variants` | no (`"."`) | jq-style path, relative to each item, to its download variants. Leave unset when an item *is* a single variant (one resolution/method/link per item). |
 | `fields` | yes | Field extraction rules — see below. |
 | `batch` | no | Batch-release detection — see below. Omit entirely if the source never bundles multiple episodes into one release. |
+| `version` | no | Versioned-release detection — see below. Omit entirely if the source never re-releases an episode with a version suffix. |
 
 Unknown keys anywhere in the file are a hard error (not silently ignored) —
 this catches the single most common authoring mistake: **a bare `key = value`
@@ -182,6 +186,42 @@ regex = "^\\d+\\s*-\\s*\\d+$"   # matches episode values like "01-22"
 Omitting `[batch]` entirely (the default for a new plugin) means nothing is
 ever flagged as a batch — existing plugins are unaffected by this feature
 until they opt in.
+
+## Versioned releases
+
+Some sources occasionally re-release an episode with a fix, signalled by a
+version suffix — SubsPlease bumps `episode` from `"08"` to `"08v2"`, then
+possibly `"08v3"`, and so on (confirmed against real torrent titles like
+`[SubsPlease] ... - 08v2 (1080p)`).
+
+The optional `[version]` table describes how to recognize these and split
+them into a base episode and a version number:
+
+```toml
+[version]
+regex = "^(?P<episode>\\d+)v(?P<version>\\d+)$"
+# path = ".episode"   # optional: match a different field instead of the
+                       # already-extracted `episode` value (this is also
+                       # the default when `path` is unset)
+```
+
+- **`regex`** (required) — must have two named capture groups: `episode`
+  (the base episode number, version suffix stripped) and `version` (the
+  version number, digits only). A plugin missing either name fails to load
+  with a clear error, rather than silently detecting nothing.
+- **`path`** (optional) — jq path, relative to the item, to match `regex`
+  against instead of the already-extracted `episode` value.
+- A value that doesn't match `regex` is unversioned: version `1`, episode
+  left unchanged. Omitting `[version]` entirely means every release is
+  version `1` — existing plugins are unaffected by this feature until they
+  opt in.
+
+Unlike `[batch]`, `[version]` only describes *how to detect* a version —
+it has no `ignore`-style knob of its own. What to actually do about a
+detected version (ignore every version bump, only act on a new version of
+the series' current latest episode, or always act on it) is a `config.toml`
+policy, the same for every show from a source: see the `[versions]` table in
+`docs/config.md`.
 
 ## Remote and Nix-provided sources
 

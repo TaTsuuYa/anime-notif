@@ -252,3 +252,26 @@ follows [Keep a Changelog](https://keepachangelog.com/).
   the notification daemon exists) to narrow the race in the first place.
   `docs/notifications.md` and `docs/nix.md` document both the failure mode
   and the mitigation.
+
+### Added
+- **Versioned-release handling** (e.g. SubsPlease re-releasing episode
+  `"08"` as `"08v2"`, `"08v3"`, ... to fix an earlier upload). Source
+  plugins can now declare an optional `[version]` table (`path`?, `regex`
+  with required named capture groups `episode`/`version`) that splits a
+  matching episode value into its base episode and version number —
+  `Release` gained a `version: u32` field (`1` for unversioned releases, or
+  when the source declares no `[version]` table at all — fully
+  backward-compatible). A new top-level `[versions]` config table (`mode`:
+  `ignore` | `latest_only` (default) | `all`, plus `[versions.sources.<id>]`
+  per-source overrides, mirroring `[notifications.sources.<id>]`'s idiom)
+  controls what happens once a version is detected: never
+  notify/download a version bump, only one that's a new version of the
+  series' *current* latest episode, or always. In every mode, a show with
+  no prior episode on record at all always processes its first-ever
+  release normally even if it's already versioned, so a show can't fail to
+  surface just because its earliest available release wasn't the original.
+  `sources/subsplease.toml` now sets `[version]` for real (verified against
+  actual SubsPlease torrent-title conventions), with a synthetic versioned
+  entry added to the captured fixture to exercise it end to end.
+  `docs/sources.md`, `docs/config.md`, and `skills/create-source-plugin/`
+  document the new tables.

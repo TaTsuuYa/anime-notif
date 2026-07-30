@@ -44,3 +44,13 @@ link       = { path = ".magnet" }
 # batches too.
 [batch]
 regex = "^\\d+\\s*-\\s*\\d+$"
+
+# SubsPlease occasionally re-releases an episode with a fix, signalled by a
+# "vN" suffix directly on `episode` — e.g. "08" becomes "08v2" (confirmed
+# against real torrent titles like "[SubsPlease] ... - 08v2 (1080p)").
+# What to actually do with a detected version (ignore it, only act on a new
+# version of the current latest episode, or always act on it) is a global
+# config policy — see the `[versions]` table in docs/config.md — not set
+# here.
+[version]
+regex = "^(?P<episode>\\d+)v(?P<version>\\d+)$"

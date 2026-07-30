@@ -77,6 +77,19 @@ pub struct Release {
     /// A source-provided stable id for the release, if any, used for dedup
     /// in preference to a computed hash.
     pub raw_id: Option<String>,
+    /// Version number, when the source plugin declares a `[version]` table
+    /// (`docs/sources.md`) and this release's episode value matched it
+    /// (e.g. `"08v2"` → `2`). `1` for an unversioned release, or when the
+    /// source has no `[version]` table at all. `#[serde(default)]` since
+    /// this is serialized into the `pending` table's `best_variant_json` —
+    /// an already-persisted pending row from before this field existed must
+    /// still deserialize.
+    #[serde(default = "default_version")]
+    pub version: u32,
+}
+
+fn default_version() -> u32 {
+    1
 }
 
 impl Release {
@@ -141,6 +154,7 @@ mod tests {
             source_icon_url: None,
             show_url: None,
             raw_id: None,
+            version: 1,
         }
     }
 
@@ -163,6 +177,27 @@ mod tests {
         let a = release("1080p", "http://x/a");
         let b = release("720p", "http://x/b");
         assert_eq!(a.episode_key(), b.episode_key());
+    }
+
+    #[test]
+    fn release_json_without_version_field_deserializes_to_version_one() {
+        // A `pending` row's `best_variant_json`, persisted before this field
+        // existed, must still deserialize — see `Release::version`'s doc.
+        let json = serde_json::json!({
+            "source_id": "test",
+            "series_title": "Show",
+            "episode": "1",
+            "season": null,
+            "resolution": "1080p",
+            "method": "direct",
+            "link": "http://x/a",
+            "cover_url": null,
+            "source_icon_url": null,
+            "show_url": null,
+            "raw_id": null,
+        });
+        let release: Release = serde_json::from_value(json).unwrap();
+        assert_eq!(release.version, 1);
     }
 
     #[test]

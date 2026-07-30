@@ -158,6 +158,32 @@ pub struct BatchConfig {
     pub ignore: bool,
 }
 
+/// Describes how to recognize a "versioned" release for this source — a
+/// re-release of an episode with a bumped version suffix (e.g. SubsPlease's
+/// `episode` value going from `"08"` to `"08v2"`, `"08v3"`, ...) — split
+/// into the base episode number and the version number. What to *do* about
+/// a detected version (ignore it, only act on a new version of the current
+/// latest episode, or always act on it) is a config-level policy, not
+/// declared here — see the `[versions]` table in `docs/config.md`.
+///
+/// Optional: a plugin with no `[version]` table never detects a version, so
+/// existing plugins are unaffected (every release is implicitly version 1).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VersionConfig {
+    /// jq path, relative to the item, to match `regex` against. Defaults to
+    /// the already-extracted `episode` field's value when unset — the
+    /// common case, since a version bump is usually signalled by the
+    /// episode field itself (e.g. `"08v2"`).
+    #[serde(default)]
+    pub path: Option<String>,
+    /// Regex with two required named capture groups: `episode` (the base
+    /// episode number, version suffix stripped) and `version` (the version
+    /// number, digits only). A value that doesn't match is treated as
+    /// version 1 (unversioned), with its episode left unchanged.
+    pub regex: String,
+}
+
 /// A source plugin, as loaded from TOML: the endpoint to poll, how to
 /// authenticate, and where to find each field in the response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -209,6 +235,11 @@ pub struct SourcePlugin {
     /// never flag anything as a batch.
     #[serde(default)]
     pub batch: Option<BatchConfig>,
+    /// How to recognize a versioned release (e.g. `"08v2"`) and split it
+    /// into a base episode and a version number. Omit to never detect a
+    /// version (every release is implicitly version 1).
+    #[serde(default)]
+    pub version: Option<VersionConfig>,
 }
 
 impl SourcePlugin {
@@ -275,6 +306,29 @@ impl SourcePlugin {
                 })
             })
             .transpose()?;
+        let version = self
+            .version
+            .as_ref()
+            .map(|v| {
+                let regex = Regex::new(&v.regex)
+                    .map_err(|e| SourceError::Invalid(format!("version.regex: {e}")))?;
+                let names: Vec<&str> = regex.capture_names().flatten().collect();
+                if !names.contains(&"episode") || !names.contains(&"version") {
+                    return Err(SourceError::Invalid(
+                        "version.regex must have named capture groups 'episode' and 'version'"
+                            .into(),
+                    ));
+                }
+                Ok::<_, SourceError>(CompiledVersion {
+                    path: v
+                        .path
+                        .as_deref()
+                        .map(|p| parse_path("version.path", p))
+                        .transpose()?,
+                    regex,
+                })
+            })
+            .transpose()?;
 
         Ok(CompiledSource {
             id: self.id.clone(),
@@ -290,6 +344,7 @@ impl SourcePlugin {
             variants,
             fields,
             batch,
+            version,
         })
     }
 }
@@ -393,6 +448,29 @@ impl CompiledBatch {
     }
 }
 
+/// A compiled [`VersionConfig`].
+#[derive(Debug, Clone)]
+pub struct CompiledVersion {
+    path: Option<JqPath>,
+    regex: Regex,
+}
+
+impl CompiledVersion {
+    /// Splits `episode` (or the value at `path`, if configured) into
+    /// `(base_episode, version)`. Returns `None` — meaning "unversioned,
+    /// version 1, episode unchanged" — when the target doesn't match.
+    pub fn extract(&self, item: &Value, episode: &str) -> Option<(String, u32)> {
+        let target = match &self.path {
+            Some(path) => path.eval_first(item).and_then(value_to_string)?,
+            None => episode.to_string(),
+        };
+        let caps = self.regex.captures(&target)?;
+        let base = caps.name("episode")?.as_str().to_string();
+        let version: u32 = caps.name("version")?.as_str().parse().ok()?;
+        Some((base, version))
+    }
+}
+
 /// Compiled variant field extractors.
 #[derive(Debug, Clone)]
 pub struct CompiledVariantFields {
@@ -456,6 +534,8 @@ pub struct CompiledSource {
     pub fields: CompiledFieldSet,
     /// Batch-release detection, if configured.
     pub batch: Option<CompiledBatch>,
+    /// Versioned-release detection, if configured.
+    pub version: Option<CompiledVersion>,
 }
 
 #[cfg(test)]
@@ -623,5 +703,58 @@ link       = { path = ".magnet" }
         );
         let compiled = SourcePlugin::parse(&toml, Path::new("t.toml")).unwrap();
         assert!(!compiled.batch.unwrap().ignore);
+    }
+
+    #[test]
+    fn no_version_table_means_version_is_never_configured() {
+        let compiled = SourcePlugin::parse(SUBSPLEASE_TOML, Path::new("t.toml")).unwrap();
+        assert!(compiled.version.is_none());
+    }
+
+    #[test]
+    fn version_regex_must_have_episode_and_version_named_groups() {
+        let toml = format!("{SUBSPLEASE_TOML}\n[version]\nregex = \"^(\\\\d+)v(\\\\d+)$\"\n");
+        let err = SourcePlugin::parse(&toml, Path::new("t.toml")).unwrap_err();
+        assert!(matches!(err, SourceError::Invalid(_)));
+    }
+
+    #[test]
+    fn version_splits_episode_and_version_number() {
+        let toml = format!(
+            "{SUBSPLEASE_TOML}\n[version]\nregex = \"^(?P<episode>\\\\d+)v(?P<version>\\\\d+)$\"\n"
+        );
+        let compiled = SourcePlugin::parse(&toml, Path::new("t.toml")).unwrap();
+        let version = compiled.version.as_ref().unwrap();
+        let item = serde_json::json!({});
+        assert_eq!(version.extract(&item, "08v2"), Some(("08".to_string(), 2)));
+        assert_eq!(
+            version.extract(&item, "08v12"),
+            Some(("08".to_string(), 12))
+        );
+    }
+
+    #[test]
+    fn version_returns_none_for_unversioned_episode() {
+        let toml = format!(
+            "{SUBSPLEASE_TOML}\n[version]\nregex = \"^(?P<episode>\\\\d+)v(?P<version>\\\\d+)$\"\n"
+        );
+        let compiled = SourcePlugin::parse(&toml, Path::new("t.toml")).unwrap();
+        let version = compiled.version.as_ref().unwrap();
+        let item = serde_json::json!({});
+        assert_eq!(version.extract(&item, "08"), None);
+    }
+
+    #[test]
+    fn version_can_match_a_different_field_via_path() {
+        let toml = format!(
+            "{SUBSPLEASE_TOML}\n[version]\npath = \".title\"\nregex = \"(?P<episode>\\\\d+)v(?P<version>\\\\d+)\"\n"
+        );
+        let compiled = SourcePlugin::parse(&toml, Path::new("t.toml")).unwrap();
+        let version = compiled.version.as_ref().unwrap();
+        let item = serde_json::json!({"title": "[SubsPlease] Show - 08v2 (1080p)"});
+        assert_eq!(
+            version.extract(&item, "irrelevant"),
+            Some(("08".to_string(), 2))
+        );
     }
 }

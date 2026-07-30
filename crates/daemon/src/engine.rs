@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anime_notif_core::config::CategoryDef;
+use anime_notif_core::config::{CategoryDef, VersionMode};
 use anime_notif_core::{Config, DownloadMethod, Release};
 use anime_notif_download::{DownloadRequest, Downloader};
 use anime_notif_notify::{Notification, NotificationAction, Notifier, Sound};
@@ -115,6 +115,25 @@ impl Engine {
                     &variant.link,
                 )
                 .await?;
+        }
+
+        let mode = self.version_mode_for(&first.source_id);
+        let variants: Vec<Release> = variants
+            .into_iter()
+            .filter(|v| {
+                resolution::version_eligible(
+                    v.version,
+                    mode,
+                    series.last_episode.as_deref(),
+                    &v.episode,
+                )
+            })
+            .collect();
+        if variants.is_empty() {
+            // Every variant in this group was an ineligible version bump
+            // (e.g. a fix for an old episode under `latest_only`). Already
+            // marked seen above, so it won't be reprocessed on future polls.
+            return Ok(());
         }
 
         let category = self.category_for(&series.category);
@@ -376,6 +395,18 @@ impl Engine {
             .or_else(|| sound_name.map(Sound::Name))
     }
 
+    /// Resolves the versioned-release policy for `source_id`: a per-source
+    /// override (`versions.sources.<id>`) if it sets `mode`, otherwise the
+    /// global `versions.mode`.
+    fn version_mode_for(&self, source_id: &str) -> VersionMode {
+        self.config
+            .versions
+            .sources
+            .get(source_id)
+            .and_then(|o| o.mode)
+            .unwrap_or(self.config.versions.mode)
+    }
+
     /// Builds an action URL; `target_url` is only used by the `open_show`
     /// kind (the show page to open).
     fn action_url(
@@ -500,6 +531,11 @@ impl Engine {
                 source_icon_url: None,
                 show_url: None,
                 raw_id: None,
+                // `seen` doesn't record version — irrelevant here anyway,
+                // since this reconstructs a release the user is manually
+                // re-triggering (Download/Whitelist), not one going through
+                // the version-eligibility gate.
+                version: 1,
             })
             .collect();
         let chosen = resolution::find_desired(
@@ -672,6 +708,24 @@ mod tests {
             source_icon_url: None,
             show_url: None,
             raw_id: None,
+            version: 1,
+        }
+    }
+
+    fn release_with_version(
+        series: &str,
+        episode: &str,
+        resolution: &str,
+        method: DownloadMethod,
+        version: u32,
+    ) -> Release {
+        Release {
+            // A real version bump always carries a new link (new
+            // torrent/magnet) — matched here so it gets its own dedup_key
+            // rather than colliding with an earlier version's.
+            link: format!("magnet:?xt={series}-{episode}-v{version}-{resolution}"),
+            version,
+            ..release(series, episode, resolution, method)
         }
     }
 
@@ -1288,5 +1342,149 @@ mod tests {
 
         let sent = notifier.sent.lock().unwrap();
         assert_eq!(sent[0].sound, Some(Sound::File("/global.oga".into())));
+    }
+
+    #[tokio::test]
+    async fn latest_only_skips_version_bump_of_a_stale_episode() {
+        // Default mode is `latest_only`.
+        let (engine, notifier, _downloader) = make_engine(Config::default()).await;
+
+        // Episode 09 resolves first, becoming the series' last_episode.
+        engine
+            .process_poll(vec![release(
+                "One Piece",
+                "09",
+                "1080",
+                DownloadMethod::Magnet,
+            )])
+            .await
+            .unwrap();
+        // A version bump of the older episode 08 shows up later.
+        engine
+            .process_poll(vec![release_with_version(
+                "One Piece",
+                "08",
+                "1080",
+                DownloadMethod::Magnet,
+                2,
+            )])
+            .await
+            .unwrap();
+
+        let sent = notifier.sent.lock().unwrap();
+        assert_eq!(sent.len(), 1, "only episode 09 should have notified");
+        assert!(sent[0].body.contains("09"));
+    }
+
+    #[tokio::test]
+    async fn latest_only_notifies_version_bump_of_the_current_episode() {
+        let (engine, notifier, _downloader) = make_engine(Config::default()).await;
+
+        engine
+            .process_poll(vec![release(
+                "One Piece",
+                "08",
+                "1080",
+                DownloadMethod::Magnet,
+            )])
+            .await
+            .unwrap();
+        engine
+            .process_poll(vec![release_with_version(
+                "One Piece",
+                "08",
+                "1080",
+                DownloadMethod::Magnet,
+                2,
+            )])
+            .await
+            .unwrap();
+
+        let sent = notifier.sent.lock().unwrap();
+        assert_eq!(sent.len(), 2, "both v1 and v2 of episode 08 should notify");
+    }
+
+    #[tokio::test]
+    async fn all_mode_notifies_every_version_regardless_of_episode() {
+        let mut config = Config::default();
+        config.versions.mode = VersionMode::All;
+        let (engine, notifier, _downloader) = make_engine(config).await;
+
+        engine
+            .process_poll(vec![release(
+                "One Piece",
+                "09",
+                "1080",
+                DownloadMethod::Magnet,
+            )])
+            .await
+            .unwrap();
+        engine
+            .process_poll(vec![release_with_version(
+                "One Piece",
+                "08",
+                "1080",
+                DownloadMethod::Magnet,
+                2,
+            )])
+            .await
+            .unwrap();
+
+        let sent = notifier.sent.lock().unwrap();
+        assert_eq!(sent.len(), 2, "mode=all notifies the stale version too");
+    }
+
+    #[tokio::test]
+    async fn ignore_mode_skips_a_version_bump_of_the_current_episode_too() {
+        let mut config = Config::default();
+        config.versions.mode = VersionMode::Ignore;
+        let (engine, notifier, _downloader) = make_engine(config).await;
+
+        engine
+            .process_poll(vec![release(
+                "One Piece",
+                "08",
+                "1080",
+                DownloadMethod::Magnet,
+            )])
+            .await
+            .unwrap();
+        engine
+            .process_poll(vec![release_with_version(
+                "One Piece",
+                "08",
+                "1080",
+                DownloadMethod::Magnet,
+                2,
+            )])
+            .await
+            .unwrap();
+
+        let sent = notifier.sent.lock().unwrap();
+        assert_eq!(sent.len(), 1, "mode=ignore never notifies a version bump");
+    }
+
+    #[tokio::test]
+    async fn first_ever_release_notifies_even_when_already_versioned() {
+        // Brand-new show: no prior episode on record at all. Even under the
+        // strictest mode (`ignore`), the first-ever sighting must still
+        // surface — otherwise the show could never be notified about.
+        let mut config = Config::default();
+        config.versions.mode = VersionMode::Ignore;
+        let (engine, notifier, _downloader) = make_engine(config).await;
+
+        engine
+            .process_poll(vec![release_with_version(
+                "One Piece",
+                "08",
+                "1080",
+                DownloadMethod::Magnet,
+                2,
+            )])
+            .await
+            .unwrap();
+
+        let sent = notifier.sent.lock().unwrap();
+        assert_eq!(sent.len(), 1);
     }
 }

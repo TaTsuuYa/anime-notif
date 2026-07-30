@@ -22,6 +22,10 @@ pub struct Config {
     pub downloads: Downloads,
     /// Notification behavior not covered by categories (click-to-open, ...).
     pub notifications: NotificationsConfig,
+    /// Policy for versioned releases (e.g. SubsPlease's `"08"` → `"08v2"`) —
+    /// see `docs/sources.md`'s `[version]` plugin table for how a version is
+    /// detected in the first place.
+    pub versions: VersionsConfig,
     /// Category definitions (seeded with `liked`/`normal`/`uninterested`).
     pub categories: Vec<CategoryDef>,
     /// Declarative rules that seed/override a series' category by matching
@@ -41,6 +45,7 @@ impl Default for Config {
             general: General::default(),
             downloads: Downloads::default(),
             notifications: NotificationsConfig::default(),
+            versions: VersionsConfig::default(),
             categories: CategoryDef::defaults(),
             rules: Vec::new(),
             sources: Vec::new(),
@@ -101,6 +106,50 @@ pub struct SourceNotificationOverride {
     /// This source's notification sound-theme name, overriding the global
     /// default. Ignored if `sound_file` is also set here.
     pub sound_name: Option<String>,
+}
+
+/// What to do about a versioned release (`docs/sources.md`'s `[version]`
+/// plugin table) — whether it was detected at all is a plugin concern; what
+/// happens once it is, is this policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VersionMode {
+    /// Never notify/download a versioned release (version 2+). The only
+    /// exception: a show with no prior episode on record at all (a brand
+    /// new show, or a newly added one) always processes its first-ever
+    /// release normally, even if that release happens to already be
+    /// versioned — otherwise the show could never surface.
+    Ignore,
+    /// Only notify/download a versioned release when it's a new version of
+    /// the series' *current* latest episode; a version bump for an older
+    /// episode is ignored. The default — matches the common case of wanting
+    /// a fixed release of what's airing now, without old re-encodes
+    /// resurfacing episodes you've moved past.
+    #[default]
+    LatestOnly,
+    /// Every version is treated like a normal release: always
+    /// notified/downloaded, regardless of which episode it targets.
+    All,
+}
+
+/// Policy for versioned releases: a global default, and per-source
+/// overrides.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct VersionsConfig {
+    /// Global default mode.
+    pub mode: VersionMode,
+    /// Per-source overrides, keyed by source id.
+    #[serde(default)]
+    pub sources: HashMap<String, SourceVersionOverride>,
+}
+
+/// A per-source override of [`VersionsConfig::mode`].
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SourceVersionOverride {
+    /// This source's version mode, overriding the global `versions.mode`.
+    pub mode: Option<VersionMode>,
 }
 
 /// Global daemon settings.
@@ -527,6 +576,47 @@ mod tests {
                 .and_then(|o| o.sound_name.as_deref()),
             Some("message-new-instant")
         );
+    }
+
+    #[test]
+    fn versions_default_to_latest_only_with_no_overrides() {
+        let cfg = Config::default();
+        assert_eq!(cfg.versions.mode, VersionMode::LatestOnly);
+        assert!(cfg.versions.sources.is_empty());
+    }
+
+    #[test]
+    fn versions_mode_can_be_configured_globally_and_per_source() {
+        let toml = r#"
+            [versions]
+            mode = "ignore"
+
+            [versions.sources.subsplease]
+            mode = "all"
+
+            [versions.sources.nyaa]
+            mode = "latest_only"
+        "#;
+        let cfg = Config::parse(toml, Path::new("t.toml")).unwrap();
+        assert_eq!(cfg.versions.mode, VersionMode::Ignore);
+        assert_eq!(
+            cfg.versions.sources.get("subsplease").and_then(|o| o.mode),
+            Some(VersionMode::All)
+        );
+        assert_eq!(
+            cfg.versions.sources.get("nyaa").and_then(|o| o.mode),
+            Some(VersionMode::LatestOnly)
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_version_mode() {
+        let toml = r#"
+            [versions]
+            mode = "sometimes"
+        "#;
+        let err = Config::parse(toml, Path::new("t.toml")).unwrap_err();
+        assert!(matches!(err, ConfigError::Parse { .. }));
     }
 
     #[test]

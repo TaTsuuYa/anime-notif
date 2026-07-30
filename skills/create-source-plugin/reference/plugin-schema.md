@@ -22,6 +22,7 @@ sync if you're updating the schema.
 | `variants` | no (`"."`) | jq-style path, *relative to each item*, to its download variants. Omit when an item has exactly one resolution/method/link. |
 | `fields` | yes | Field extraction rules — see below. |
 | `batch` | no | Batch-release detection — see below. Omit if the source never bundles multiple episodes into one release. |
+| `version` | no | Versioned-release detection — see below. Omit if the source never re-releases an episode with a version suffix. |
 
 ### ⚠️ Field ordering matters (a real TOML gotcha)
 
@@ -122,6 +123,30 @@ regex = "^\\d+\\s*-\\s*\\d+$"   # matches against the extracted `episode` value 
 Only whether `regex` *matches* matters (capture groups are ignored). If you
 don't see any batch-shaped entries in the sample data, skip this table
 entirely — it's optional, and most sources never need it.
+
+## Versioned releases
+
+Some sources occasionally re-release an episode with a fix, signalled by a
+version suffix on the episode value — SubsPlease does this with `"08"` →
+`"08v2"` → `"08v3"`, etc. If the sample data has anything like this, add:
+
+```toml
+[version]
+regex = "^(?P<episode>\\d+)v(?P<version>\\d+)$"   # matches against the extracted `episode` value by default
+# path = ".episode"                                 # set this instead to match a different field
+```
+
+`regex` **must** have two named capture groups: `episode` (the base episode
+number, version suffix stripped) and `version` (the version number, digits
+only) — a regex missing either name fails to load. A value that doesn't
+match is unversioned (version 1, episode unchanged). If you don't see any
+versioned entries in the sample data, skip this table entirely.
+
+Unlike `[batch]`, this table only describes *how to detect* a version — it
+has no `ignore` knob of its own. What to do about a detected version
+(ignore every one, only act on a new version of the current latest episode,
+or always act on it) is a `config.toml`-level policy (the `[versions]`
+table, `docs/config.md`), not part of the plugin file.
 
 ## Using the finished plugin
 

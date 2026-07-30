@@ -91,6 +91,16 @@ the same commit as the code change.
    by default rather than notifying like a normal episode. If you don't see
    any, skip this — most sources never need it.
 
+7b. **Check for versioned releases.** Scan the sample data for any episode
+   value with a version suffix (e.g. `"08v2"`, `"08v3"`) — sources sometimes
+   re-release an episode with a fix. If you find one, add a `[version]`
+   table (see `reference/plugin-schema.md`) so anime-notif can tell `"08"`
+   and `"08v2"` are the same episode. Note this is only detection — whether
+   a detected version actually gets notified/downloaded is a `config.toml`
+   policy the user sets separately (`docs/config.md`'s `[versions]` table),
+   not something this plugin file controls. If you don't see any versioned
+   entries, skip this — most sources never need it.
+
 8. **Write the file** to `sources/<id>.toml` (matching
    `reference/plugin-schema.md`'s field ordering — top-level keys like
    `items`/`variants` *before* the `[fields]` table).
@@ -114,5 +124,7 @@ the same commit as the code change.
 `examples/subsplease.toml` is a complete, real, working plugin (SubsPlease's
 `?f=latest` API) — use it as a concrete reference for the shape of a
 finished file, including the constant-field (`method`),
-relative-URL-with-`prefix` (`cover`), and batch-detection (`[batch]`,
-matching SubsPlease's real `"01-22"`-style episode ranges) patterns.
+relative-URL-with-`prefix` (`cover`), batch-detection (`[batch]`, matching
+SubsPlease's real `"01-22"`-style episode ranges), and versioned-release
+detection (`[version]`, matching SubsPlease's real `"08v2"`-style fixes)
+patterns.

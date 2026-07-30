@@ -111,6 +111,50 @@ up a click handler, it doesn't guarantee anything about how your
 notification daemon behaves when you click a notification with no handler
 registered.
 
+## `[versions]`
+
+Policy for **versioned releases** — a source re-releasing an episode with a
+fix, e.g. SubsPlease's `"08"` becoming `"08v2"`. Whether a release is
+detected as versioned at all is a per-source-plugin concern (the `[version]`
+table, `docs/sources.md`); this section controls what to *do* about it, the
+same for every show from a source:
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `mode` | `"ignore"` \| `"latest_only"` \| `"all"` | `"latest_only"` | See below. |
+| `sources` | table, optional | empty | Per-source `mode` overrides — see below. |
+
+```toml
+[versions]
+mode = "latest_only"
+
+# Overrides the global mode above for this one source only.
+[versions.sources.subsplease]
+mode = "all"
+```
+
+- **`"ignore"`** — never notify/download a version bump (version 2+); only
+  the original, unversioned release ever does.
+- **`"latest_only"`** (the default) — only notify/download a version bump
+  when it's a new version of the series' *current* latest episode; a
+  version bump of an older episode is ignored. This is usually what you
+  want: get the fixed release of what's airing now, without an old
+  re-encode resurfacing an episode you've moved past.
+- **`"all"`** — every version is treated like any other release: always
+  notified/downloaded, regardless of which episode it targets.
+
+In every mode, a show with **no prior episode on record at all** (a
+brand-new show, or one you've just added) always processes its first-ever
+release normally, even if that release happens to already be versioned —
+otherwise the show could never surface just because its earliest available
+release wasn't the original, unversioned one.
+
+"Notified/downloaded" here means exactly what it means everywhere else in
+this config: gated by the series' category (`notify`/`auto_download`,
+below) — a version bump eligible under `mode` still only downloads
+automatically if the show is in an auto-downloading category, same as any
+other release.
+
 ## `[[categories]]`
 
 Categories are data with behavior flags, not hardcoded names — `notify`
